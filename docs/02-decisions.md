@@ -103,3 +103,8 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 ### Ecrans a choix natifs (2026-10-09)
 - `nativeChoicesActive()` : tout `select` en attente de bouton. Le moteur n'affiche alors ni le texte ni les boutons de choix ; il envoie l'invite (`current_text_buffer`) et les choix (`select_links`) à `MainActivity.onGameChoices`. L'invite défile, les boutons restent épinglés en bas. Un tap renvoie l'indice du choix (même mécanisme que le menu).
 - Couvre : notice, choix ADV/NVL, ombre portée, choix de l'opening. Langue : boutons de sprites (`english_textbutton`…), traduits par le dictionnaire. Les noms inconnus deviennent « Nom du fichier ».
+
+### Sauvegarde / chargement natifs (2026-10-09)
+- Les emplacements sont des boutons de sprites `bmp\system\savearea_w.png` (ids 51 à 58). Le moteur joint à chacun le texte des sprites posés dans son cadre (date `Ep1: Oct 9, 10:40 PM`, titre de l'épisode) ; Android affiche « Slot N - date - titre » ou « Slot N - empty », sans le préfixe de style `:s/8,16,1;`.
+- Ordre : les emplacements forment une ligne virtuelle classée par numéro (le tri par position les entrelaçait en deux colonnes) ; pages 1 à 5 traduites. Le bouton « Load game » de l'écran Save bascule en mode chargement.
+- Les vignettes et textes de sauvegarde restent dessinés dans la scène (visibles en haut).

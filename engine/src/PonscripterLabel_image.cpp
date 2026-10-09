@@ -581,6 +581,20 @@ void PonscripterLabel::androidPublishButtons()
             char pos[48];
             snprintf(pos, sizeof(pos), "%c%d%c%d", 9, (int) it->second.select_rect.x, 9, (int) it->second.select_rect.y);
             out += pos;
+            // emplacements de sauvegarde : texte des sprites poses dans le cadre (date, commentaire)
+            out += (char) 9;
+            if (f && strcasestr(f, "savearea")) {
+                SDL_Rect r = it->second.select_rect;
+                for (int k = 0; k < MAX_SPRITE_NUM; ++k) {
+                    if (k == it->second.sprite_no) continue;
+                    AnimationInfo* o = &sprite_info[k];
+                    const char* on = o->image_name;
+                    if (!on || on[0] != ':' || !strchr(on, '^') || !o->showing()) continue;
+                    if (o->pos.x < r.x || o->pos.y < r.y || o->pos.x > r.x + r.w || o->pos.y > r.y + r.h) continue;
+                    out += on;
+                    out += (char) 2;
+                }
+            }
             out += (char) 10;
         }
     }

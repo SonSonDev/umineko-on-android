@@ -169,6 +169,10 @@ public class MainActivity extends SDLActivity {
         BUTTON_NAMES.put("ep4_1", "Episode 4");
         BUTTON_NAMES.put("load", "Load game");
         BUTTON_NAMES.put("unlock", "Unlock");
+        for (int pg = 1; pg <= 5; pg++) {
+            BUTTON_NAMES.put("page" + pg, "Page " + pg);
+            BUTTON_NAMES.put("page" + pg + "_b", "Page " + pg + " (current)");
+        }
         BUTTON_NAMES.put("english_textbutton", "English");
         BUTTON_NAMES.put("japanese_textbutton", "Japanese");
     }
@@ -279,10 +283,18 @@ public class MainActivity extends SDLActivity {
     private static final class MenuItem {
         int id, x, y;
         String label;
+        String info = "";
     }
 
     private Button menuButton(MenuItem it, int sp) {
-        Button b = makeButton(it.label, sp, Color.rgb(52, 46, 70));
+        String text = it.label;
+        if (it.label.toLowerCase().startsWith("savearea")) {
+            int slot = it.id > 50 ? ((it.id - 51) % 8) + 1 : it.id;
+            text = "Slot " + slot + (it.info.isEmpty() ? "  -  empty" : "  -  " + it.info);
+        }
+        Button b = makeButton(text, sp, Color.rgb(52, 46, 70));
+        b.setMinHeight(dp(58));
+        b.setPadding(dp(12), dp(8), dp(12), dp(8));
         final int id = it.id;
         b.setOnClickListener(v -> {
             v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
@@ -308,10 +320,29 @@ public class MainActivity extends SDLActivity {
             } catch (NumberFormatException e) { continue; }
             it.label = buttonLabel(f[1], f[2]);
             if (it.label.isEmpty()) continue;
+            if (f.length >= 6 && f[2].toLowerCase().contains("savearea")) {
+                StringBuilder sb = new StringBuilder();
+                for (String part : f[5].split(String.valueOf((char) 2))) {
+                    String tagless = part.startsWith(":") && part.indexOf(';') > 0 ? part.substring(part.indexOf(';') + 1) : part;
+                    String c = cleanChoice(tagless);
+                    if (!c.isEmpty()) {
+                        if (sb.length() > 0) sb.append(" - ");
+                        sb.append(c);
+                    }
+                }
+                it.info = sb.toString();
+            }
             items.add(it);
         }
         // ordre de lecture : de haut en bas, puis de gauche a droite
-        java.util.Collections.sort(items, (p, q) -> p.y != q.y ? Integer.compare(p.y, q.y) : Integer.compare(p.x, q.x));
+        // emplacements de sauvegarde : une seule ligne virtuelle, classee par numero (ordre total coherent)
+        int slotY = Integer.MAX_VALUE;
+        for (MenuItem it : items)
+            if (it.label.toLowerCase().startsWith("savearea")) slotY = Math.min(slotY, it.y);
+        for (MenuItem it : items)
+            if (it.label.toLowerCase().startsWith("savearea")) { it.y = slotY; it.x = it.id; }
+        java.util.Collections.sort(items, (p, q) ->
+                p.y != q.y ? Integer.compare(p.y, q.y) : Integer.compare(p.x, q.x));
         boolean[] used = new boolean[items.size()];
         int count = 0;
         for (int i = 0; i < items.size(); i++) {
@@ -320,7 +351,7 @@ public class MainActivity extends SDLActivity {
             used[i] = true;
             boolean unlock = it.label.equals("Unlock");
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.setMargins(dp(16), dp(6), dp(16), dp(6));
             // un bouton Unlock est affiche sur la meme ligne que l'element qui l'accompagne,
             // quel que soit l'ordre dans lequel le tri les place
