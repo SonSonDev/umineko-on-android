@@ -169,6 +169,8 @@ public class MainActivity extends SDLActivity {
         BUTTON_NAMES.put("ep4_1", "Episode 4");
         BUTTON_NAMES.put("load", "Load game");
         BUTTON_NAMES.put("unlock", "Unlock");
+        BUTTON_NAMES.put("english_textbutton", "English");
+        BUTTON_NAMES.put("japanese_textbutton", "Japanese");
     }
 
     // Libelle d'un bouton : texte du sprite (":s#FFFFFF^~c4~Texte") ou nom du fichier image
@@ -185,7 +187,62 @@ public class MainActivity extends SDLActivity {
         int dot = base.lastIndexOf('.');
         if (dot > 0) base = base.substring(0, dot);
         String nice = BUTTON_NAMES.get(base.toLowerCase());
-        return nice != null ? nice : base;
+        if (nice != null) return nice;
+        // nom inconnu : "some_name" -> "Some name"
+        String pretty = base.replace('_', ' ').trim();
+        if (!pretty.isEmpty()) pretty = Character.toUpperCase(pretty.charAt(0)) + pretty.substring(1);
+        return pretty;
+    }
+
+    // Ecrans a choix (select) : invite + boutons natifs
+    public static void onGameChoices(byte[] raw) {
+        final String data = new String(stripCodes(raw), StandardCharsets.UTF_8);
+        final MainActivity a = instance;
+        if (a != null) a.runOnUiThread(() -> a.showChoices(data));
+    }
+
+    // Retire les marques de mise en forme du script : ^, ~c4~, #RRGGBB, > initial
+    private static String cleanChoice(String t) {
+        String s = t.replaceAll("~[^~]*~", "").replace("^", "").replaceAll("#[0-9A-Fa-f]{6}", "").trim();
+        while (s.startsWith(">")) s = s.substring(1).trim();
+        return s;
+    }
+
+    private LinearLayout choiceBox;
+    private TextView choiceHeader;
+    private LinearLayout choiceButtons;
+
+    private void showChoices(String data) {
+        choiceButtons.removeAllViews();
+        choicesShown = !data.isEmpty();
+        if (data.isEmpty()) {
+            choiceBox.setVisibility(View.GONE);
+            return;
+        }
+        String[] lines = data.split(String.valueOf((char) 10));
+        String head = lines.length > 0 ? lines[0].replace((char) 1, (char) 10) : "";
+        head = head.replaceAll("[ ]{2,}", " ").trim();
+        choiceHeader.setText(head);
+        choiceHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(15f, textSp * 0.82f));
+        for (int i = 1; i < lines.length; i++) {
+            String[] f = lines[i].split(String.valueOf((char) 9), 2);
+            if (f.length < 2) continue;
+            final int id;
+            try { id = Integer.parseInt(f[0]); } catch (NumberFormatException e) { continue; }
+            String label = cleanChoice(f[1]);
+            if (label.isEmpty()) continue;
+            Button b = makeButton(label, 18, Color.rgb(52, 46, 70));
+            b.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                nativePressButton(id);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
+            lp.setMargins(dp(16), dp(5), dp(16), dp(5));
+            choiceButtons.addView(b, lp);
+        }
+        hintText.setVisibility(View.GONE);
+        choiceBox.setVisibility(View.VISIBLE);
     }
 
     // Pages d'intro dont le texte est incruste dans l'image : texte natif a la place
@@ -234,7 +291,10 @@ public class MainActivity extends SDLActivity {
         return b;
     }
 
+    private boolean choicesShown = false;
+
     private void showMenu(String data) {
+        if (choicesShown && data.isEmpty()) return; // les choix (select) occupent deja cette zone
         menuList.removeAllViews();
         java.util.ArrayList<MenuItem> items = new java.util.ArrayList<>();
         for (String line : data.split(String.valueOf((char) 10))) {
@@ -524,6 +584,27 @@ public class MainActivity extends SDLActivity {
             return false; // le defilement reste gere par le ScrollView
         });
         reader.addView(noteScroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        choiceBox = new LinearLayout(this);
+        choiceBox.setOrientation(LinearLayout.VERTICAL);
+        choiceBox.setBackgroundColor(Color.rgb(16, 14, 20));
+        choiceBox.setVisibility(View.GONE);
+        ScrollView headScroll = new ScrollView(this);
+        choiceHeader = new TextView(this);
+        choiceHeader.setTextColor(Color.rgb(236, 232, 224));
+        choiceHeader.setTypeface(Typeface.SERIF);
+        choiceHeader.setLineSpacing(0, 1.2f);
+        choiceHeader.setPadding(dp(20), dp(14), dp(20), dp(8));
+        headScroll.addView(choiceHeader, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        choiceBox.addView(headScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        choiceButtons = new LinearLayout(this);
+        choiceButtons.setOrientation(LinearLayout.VERTICAL);
+        choiceButtons.setPadding(0, dp(4), 0, dp(8));
+        choiceBox.addView(choiceButtons, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        reader.addView(choiceBox, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         menuView = new ScrollView(this);
         menuView.setBackgroundColor(Color.rgb(16, 14, 20));

@@ -94,3 +94,21 @@ extern "C" void android_send_note(int id)
     env->DeleteLocalRef(cls);
     env->DeleteLocalRef(act);
 }
+
+// Ecran a choix (select) : en-tete + choix "id TAB texte", chaine vide = aucun
+extern "C" void android_send_choices(const char* data)
+{
+    JNIEnv* env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+    jobject act = (jobject) SDL_AndroidGetActivity();
+    if (!env || !act) return;
+    int n = data ? (int) strlen(data) : 0;
+    jbyteArray arr = env->NewByteArray(n);
+    if (n) env->SetByteArrayRegion(arr, 0, n, (const jbyte*) data);
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(cls, "onGameChoices", "([B)V");
+    if (m) env->CallStaticVoidMethod(cls, m, arr);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(arr);
+    env->DeleteLocalRef(act);
+}

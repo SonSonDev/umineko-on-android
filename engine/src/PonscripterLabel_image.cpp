@@ -521,6 +521,27 @@ extern "C" void android_send_note(int id);
 // Menu de l'histoire (clic droit...) : boutons de sprites a libelle connu, affiches par Android
 static bool g_menu_redraw = false; // le menu natif vient (re)devenir actif : redessiner sans les plaques
 
+extern "C" void android_send_choices(const char* data);
+
+// Ecran a choix (select) : les choix et leur invite sont affiches par Android
+bool PonscripterLabel::nativeChoicesActive()
+{
+    static bool prev = false;
+    bool act = g_native_text_wanted && (event_mode & WAIT_BUTTON_MODE) && !select_links.empty();
+    if (act && !prev) g_menu_redraw = true;
+    prev = act;
+    return act;
+}
+
+bool PonscripterLabel::isChoiceButtonAnim(AnimationInfo* a)
+{
+    for (ButtonElt::iterator it = buttons.begin(); it != buttons.end(); ++it)
+        if (!it->second.isSprite() && (a == it->second.anim[0] || a == it->second.anim[1]) && a)
+            return true;
+    return false;
+}
+
+
 bool PonscripterLabel::nativeMenuActive()
 {
     static bool prev = false;
@@ -573,6 +594,31 @@ void PonscripterLabel::androidPublishButtons()
             flush(refreshMode());
         }
     }
+    {
+        static std::string lastChoices;
+        std::string ch;
+        if (nativeChoicesActive()) {
+            const char* hd = current_text_buffer[current_language]->contents;
+            std::string head = hd ? hd : "";
+            for (size_t i = 0; i < head.size(); ++i)
+                if (head[i] == 10) head[i] = 1;
+            ch = head;
+            ch += (char) 10;
+            int counter = 1;
+            for (SelectElt::iterator it = select_links.begin(); it != select_links.end(); ++it, ++counter) {
+                if (!it->text) continue;
+                char idb[16];
+                snprintf(idb, sizeof(idb), "%d%c", counter, 9);
+                ch += idb;
+                ch += (const char*) it->text;
+                ch += (char) 10;
+            }
+        }
+        if (ch != lastChoices) {
+            lastChoices = ch;
+            android_send_choices(ch.c_str());
+        }
+    }
     bool redraw = g_menu_redraw;
     g_menu_redraw = false;
     if (out != last) {
@@ -612,6 +658,8 @@ int PonscripterLabel::introNoteId()
 
 #else
 int PonscripterLabel::introNoteId() { return 0; }
+bool PonscripterLabel::nativeChoicesActive() { return false; }
+bool PonscripterLabel::isChoiceButtonAnim(AnimationInfo*) { return false; }
 bool PonscripterLabel::nativeStoryText() { return false; }
 bool PonscripterLabel::nativeMenuActive() { return false; }
 bool PonscripterLabel::isMenuButtonAnim(AnimationInfo*) { return false; }
@@ -662,7 +710,7 @@ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
             }
         }
 
-        if (!nativeStoryText()) {
+        if (!nativeStoryText() && !nativeChoicesActive()) {
         if (refresh_mode & REFRESH_SHADOW_MODE)
             shadowTextDisplay(surface, clip);
         if (refresh_mode & REFRESH_TEXT_MODE)
@@ -704,7 +752,7 @@ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
     }
 
     if (!windowback_flag) {
-        if (!nativeStoryText()) {
+        if (!nativeStoryText() && !nativeChoicesActive()) {
         if (refresh_mode & REFRESH_SHADOW_MODE)
             shadowTextDisplay(surface, clip);
         if (refresh_mode & REFRESH_TEXT_MODE)

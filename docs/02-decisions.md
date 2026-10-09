@@ -99,3 +99,7 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 - Page d'intro « TIPS MODE » : le texte est incrusté dans `BMP\background\efe\text002/text003.png` (plein cadre 1920×1080). `introNoteId()` reconnaît ces fonds ; le moteur noircit le bas de l'image (à partir de 360/540) et `MainActivity.showNote` affiche le texte en natif, défilable, tap = avancer (le « clic droit » devient le bouton Menu).
 - Le panneau ne mélange plus les pages : seul le texte de l'histoire est envoyé.
 - Restent dessinés par le moteur : langue, notice, choix ADV, ombre portée, choix de l'opening (écrans `select`/textbtn).
+
+### Ecrans a choix natifs (2026-10-09)
+- `nativeChoicesActive()` : tout `select` en attente de bouton. Le moteur n'affiche alors ni le texte ni les boutons de choix ; il envoie l'invite (`current_text_buffer`) et les choix (`select_links`) à `MainActivity.onGameChoices`. L'invite défile, les boutons restent épinglés en bas. Un tap renvoie l'indice du choix (même mécanisme que le menu).
+- Couvre : notice, choix ADV/NVL, ombre portée, choix de l'opening. Langue : boutons de sprites (`english_textbutton`…), traduits par le dictionnaire. Les noms inconnus deviennent « Nom du fichier ».

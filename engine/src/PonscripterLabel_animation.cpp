@@ -436,6 +436,7 @@ void PonscripterLabel::drawTaggedSurface(SDL_Surface* dst_surface, AnimationInfo
 #ifdef ANDROID_PORT
     // le curseur d'attente est remplace par l'interface Android pendant l'histoire
     if (nativeMenuActive() && isMenuButtonAnim(anim)) return;
+    if (nativeChoicesActive() && isChoiceButtonAnim(anim)) return;
     if (nativeStoryText()) {
         if (anim == &cursor_info[CURSOR_WAIT_NO] || anim == &cursor_info[CURSOR_NEWPAGE_NO])
             return;
