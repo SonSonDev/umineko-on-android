@@ -1,0 +1,26 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+*.apk
+*.aab
+
+# Sources inutilisees par la compilation Android (le fichier de build utilise
+# third_party/* modernes ; du moteur il ne garde que bzip2 et smpeg2)
+engine/src/extlib/src/SDL2-2.0.3/
+engine/src/extlib/src/SDL2_mixer-2.0.0/
+engine/src/extlib/src/SDL2_image-2.0.0/
+engine/src/extlib/src/freetype-2.3.5/
+engine/src/extlib/src/libvorbis-1.3.4/
+engine/src/extlib/src/libpng-1.6.49/
+engine/src/extlib/src/jpeg-9f/
+third_party/SDL2/test/
+third_party/SDL2/Xcode*/
+third_party/SDL2_image/external/
+third_party/SDL2_image/Xcode*/
+third_party/SDL2_image/VisualC*/
+third_party/SDL2_mixer/external/
+third_party/SDL2_mixer/Xcode*/
+third_party/SDL2_mixer/VisualC*/

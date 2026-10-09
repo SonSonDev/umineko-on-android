@@ -1,0 +1,95 @@
+name: Build
+on: [push, pull_request]
+env:
+  SSH_KEY: ${{ secrets.SSH_KEY }}
+  DOWNLOAD_SERVER: ${{ secrets.DOWNLOAD_SERVER }}
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        steam: ["-steam", ""]
+        os: [windows-2022, macos-13, ubuntu-24.04]
+        isinclude: [false] # Makes include add new jobs instead of editing existing ones
+        include:
+          - os: ubuntu-24.04
+            nodep: "-nodep"
+            isinclude: true
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }}${{ matrix.steam }}${{ matrix.nodep }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Cache MSYS2
+        uses: actions/cache@v3
+        with:
+          path: C:\tools\msys64
+          key: msys2
+        if: startsWith(matrix.os, 'windows')
+      - name: Initialize Environment
+        env:
+          OS: ${{ matrix.os }}
+          STEAM: ${{ matrix.steam }}
+        run: |
+          case $OS in
+          windows*)
+            echo "TRAVIS_OS_NAME=windows" >> $GITHUB_ENV;;
+          ubuntu*)
+            echo "TRAVIS_OS_NAME=linux" >> $GITHUB_ENV;;
+          macos*)
+            HOMEBREW_NO_INSTALL_CLEANUP=1 brew install automake
+            echo "TRAVIS_OS_NAME=osx" >> $GITHUB_ENV;;
+          esac
+          if [ -z "$STEAM" ]; then echo STEAMLESS=YES >> $GITHUB_ENV; fi
+        shell: bash
+      - name: Install Packages
+        run: |
+          if [ "$TRAVIS_OS_NAME" == "linux" ]; then
+            export -p > env.txt
+            docker build -t steambuild -f .github/workflows/steambuild.dockerfile .
+            exit
+          fi
+          . .travis_before_install.sh
+          echo "STEAM=$STEAM" >> $GITHUB_ENV
+          echo "msys2=$msys2" >> $GITHUB_ENV
+          echo "mingw64=$mingw64" >> $GITHUB_ENV
+          echo "mingw32=$mingw32" >> $GITHUB_ENV
+        env:
+          NODEP: ${{ matrix.nodep }}
+        shell: bash
+      - name: Build
+        id: build
+        run: |
+          if [ "$TRAVIS_OS_NAME" == "linux" ]; then
+            docker run -v $PWD:/pons steambuild bash -c "(mv /build/key /pons/key || true) && (mv /build/src/extlib/src/steam-sdk/* /pons/src/extlib/src/steam-sdk/ || true) && . /build/env.txt && cd /pons && bash .travis_run.sh"
+          else
+            bash .travis_run.sh
+          fi
+          echo "name=ponscr-$(cat buildinfo.txt)" >> $GITHUB_OUTPUT
+        shell: bash
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.name }}
+          path: |
+            ponscr.zip
+      - name: Rename Files
+        run: |
+          TAG=${{ github.ref_name }}
+          mv ponscr.zip ponscr-${TAG#v}-$(cat buildinfo.txt).zip || true
+        shell: bash
+      # Publish a release, only on tagged commits
+      - name: Release (tag)
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/') # only publish tagged commits
+        with:
+          files: ponscr-*.zip
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # In case of a Docker Error, print it out to stderr so we can debug it better
+      - name: Upload Docker Logs on Failure
+        if: failure()
+        uses: jwalton/gh-docker-logs@v2
+        with:
+          shell: bash

@@ -1,0 +1,565 @@
+diff --git a/src/Fontinfo.cpp b/src/Fontinfo.cpp
+index b923284..a49564b 100644
+--- a/src/Fontinfo.cpp
++++ b/src/Fontinfo.cpp
+@@ -103,6 +103,10 @@ Font* FontsStruct::font(int style)
+         exit(1);
+     }
+     
++#ifdef ANDROID_PORT
++    // le script 07th-Mod peut produire un style > 7 (ex. ~c4~) : on ne garde que les bits valides
++    style &= (count - 1);
++#endif
+     if (font_[style]) return font_[style];
+ 
+     size_t len;
+diff --git a/src/Ponscripter.cpp b/src/Ponscripter.cpp
+index 9343cdd..542d9cd 100644
+--- a/src/Ponscripter.cpp
++++ b/src/Ponscripter.cpp
+@@ -358,6 +358,10 @@ static bool parseOptionFile(const char *filename, PonscripterLabel &ons,
+     return false;
+ }
+ 
++#ifdef ANDROID_PORT
++extern "C" void android_redirect_stdio();
++#endif
++
+ #ifdef QWS
+ int SDL_main(int argc, char** argv)
+ #elif defined (PSP)
+@@ -366,6 +370,9 @@ extern "C" int main(int argc, char** argv)
+ int main(int argc, char** argv)
+ #endif
+ {
++#ifdef ANDROID_PORT
++    android_redirect_stdio();
++#endif
+     PonscripterLabel ons;
+     pstring preferred_script = "";
+ 
+diff --git a/src/PonscripterLabel.cpp b/src/PonscripterLabel.cpp
+index 6afcbfa..4c02b79 100644
+--- a/src/PonscripterLabel.cpp
++++ b/src/PonscripterLabel.cpp
+@@ -1,3 +1,4 @@
++#include <math.h>
+ /* -*- C++ -*-
+  *
+  *  PonscripterLabel.cpp - Execution block parser of Ponscripter
+@@ -1442,9 +1443,107 @@ void PonscripterLabel::resetSentenceFont()
+     sentence_font_info.pos.h = screen_height;
+ }
+ 
++#ifdef ANDROID_PORT
++int g_crop_x = 0; // decalage de la zone visible, en coordonnees du jeu (pour les clics)
++
++static int g_lw = -1, g_lh = -1;
++
++static void setLogicalOnce(SDL_Renderer* r, int w, int h)
++{
++    if (w != g_lw || h != g_lh) {
++        g_lw = w; g_lh = h;
++        SDL_RenderSetLogicalSize(r, w, h);
++    }
++}
++
++// Lecture video : plein cadre 16:9 complet (pas de rognage), le reste de la surface reste noir
++void androidSetFullLogical(SDL_Renderer* r, int w, int h)
++{
++    setLogicalOnce(r, w, h);
++}
++
++// Pendant l'histoire en portrait, ne montre qu'une bande centree de la scene (rognage lateral)
++// et la place pour que chaque personnage reste visible a au moins 2/3.
++bool PonscripterLabel::androidViewRect(SDL_Rect* out)
++{
++    static bool panValid = false;
++    static float panShown = 0;
++    static Uint32 panTime = 0;
++    g_crop_x = 0;
++    int ww = 0, wh = 0;
++    if (!nativeStoryText() || !screen) { panValid = false; setLogicalOnce(renderer, screen_width, screen_height); return false; }
++    SDL_GetWindowSize(screen, &ww, &wh);
++    if (ww <= 0 || wh <= 0) { setLogicalOnce(renderer, screen_width, screen_height); return false; }
++    int cw = (int) (screen_height * (float) ww / (float) wh + 0.5f);
++    if (cw >= screen_width) { setLogicalOnce(renderer, screen_width, screen_height); return false; }
++
++    int n = 0, sx0[3], sx1[3];
++    for (int i = 0; i < 3; ++i) {
++        if (!tachi_info[i].image_surface) continue;
++        int x0 = tachi_info[i].pos.x, x1 = x0 + tachi_info[i].pos.w;
++        if (x1 <= 0 || x0 >= screen_width || x1 <= x0) continue;
++        sx0[n] = x0; sx1[n] = x1; ++n;
++    }
++    int maxpan = screen_width - cw;
++    int pan = maxpan / 2;
++    if (n > 0) {
++        int u0 = sx0[0], u1 = sx1[0];
++        for (int i = 1; i < n; ++i) { if (sx0[i] < u0) u0 = sx0[i]; if (sx1[i] > u1) u1 = sx1[i]; }
++        int desired = (u0 + u1) / 2 - cw / 2;
++        if (desired < 0) desired = 0;
++        if (desired > maxpan) desired = maxpan;
++        float bestScore = -1; int bestDist = 1 << 30; pan = desired;
++        for (int p = 0; p <= maxpan; p += 2) {
++            float worst = 1.0f;
++            for (int i = 0; i < n; ++i) {
++                int a = sx0[i] > p ? sx0[i] : p, b = sx1[i] < p + cw ? sx1[i] : p + cw;
++                float vis = b > a ? (float) (b - a) / (float) (sx1[i] - sx0[i]) : 0.0f;
++                if (vis < worst) worst = vis;
++            }
++            if (worst > 0.70f) worst = 1.0f; // au moins 2/3 (marge): tous les cas valides se valent
++            int dist = p > desired ? p - desired : desired - p;
++            if (worst > bestScore + 0.001f || (worst > bestScore - 0.001f && dist < bestDist)) {
++                bestScore = worst; bestDist = dist; pan = p;
++            }
++        }
++    }
++    // Glissement : la zone visible rejoint sa cible en douceur (amortissement exponentiel, ~0,3 s)
++    Uint32 now = SDL_GetTicks();
++    if (!panValid) {
++        panShown = (float) pan;
++        panValid = true;
++    } else {
++        float dt = (float) (now - panTime);
++        if (dt > 100.0f) dt = 100.0f;
++        float k = 1.0f - expf(-dt / 90.0f);
++        panShown += ((float) pan - panShown) * k;
++        if (fabsf((float) pan - panShown) < 0.6f) panShown = (float) pan;
++    }
++    panTime = now;
++    if (panShown < 0) panShown = 0;
++    if (panShown > (float) maxpan) panShown = (float) maxpan;
++    pan = (int) (panShown + 0.5f);
++    g_crop_x = pan;
++    out->x = pan; out->y = 0; out->w = cw; out->h = screen_height;
++    setLogicalOnce(renderer, cw, screen_height);
++    return true;
++}
++#endif
++
+ void PonscripterLabel::rerender() {
++#ifdef ANDROID_PORT
++  androidPublishButtons();
++#endif
+   SDL_RenderClear(renderer);
++#ifdef ANDROID_PORT
++  SDL_Rect src;
++  if (androidViewRect(&src))
++    SDL_RenderCopy(renderer, screen_tex, &src, NULL);
++  else
++    SDL_RenderCopy(renderer, screen_tex, NULL, NULL);
++#else
+   SDL_RenderCopy(renderer, screen_tex, NULL, NULL);
++#endif
+   SDL_RenderPresent(renderer);
+ }
+ 
+diff --git a/src/PonscripterLabel.h b/src/PonscripterLabel.h
+index c9994f9..c3ee701 100644
+--- a/src/PonscripterLabel.h
++++ b/src/PonscripterLabel.h
+@@ -870,6 +870,12 @@ private:
+     bool new_line_skip_flag;
+     int  text_speed_no;
+ 
++    bool nativeStoryText();
++    bool nativeMenuActive();
++    bool isMenuButtonAnim(AnimationInfo* a);
++    void androidPublishButtons();
++    void androidPressButton(int id);
++    bool androidViewRect(SDL_Rect* out);
+     void shadowTextDisplay(SDL_Surface* surface, SDL_Rect &clip);
+     void clearCurrentTextBuffer(int j);
+     void clearAllCurrentTextBuffers();
+diff --git a/src/PonscripterLabel_animation.cpp b/src/PonscripterLabel_animation.cpp
+index 5af4877..265772f 100644
+--- a/src/PonscripterLabel_animation.cpp
++++ b/src/PonscripterLabel_animation.cpp
+@@ -433,6 +433,18 @@ void PonscripterLabel::parseTaggedString(AnimationInfo* anim, bool is_mask)
+ 
+ void PonscripterLabel::drawTaggedSurface(SDL_Surface* dst_surface, AnimationInfo* anim, SDL_Rect &clip)
+ {
++#ifdef ANDROID_PORT
++    // le curseur d'attente est remplace par l'interface Android pendant l'histoire
++    if (nativeMenuActive() && isMenuButtonAnim(anim)) return;
++    if (nativeStoryText()) {
++        if (anim == &cursor_info[CURSOR_WAIT_NO] || anim == &cursor_info[CURSOR_NEWPAGE_NO])
++            return;
++        // le script 07th-Mod dessine aussi son propre curseur (sprites bmp\cursor0/1.png)
++        const char* n = anim->image_name;
++        const char* f = anim->file_name;
++        if ((n && strcasestr(n, "cursor")) || (f && strcasestr(f, "cursor"))) return;
++    }
++#endif
+     SDL_Rect poly_rect = anim->pos;
+     if (!anim->abs_flag) {
+         poly_rect.x += int (floor(sentence_font.GetX() * screen_ratio1 / screen_ratio2));
+diff --git a/src/PonscripterLabel_command.cpp b/src/PonscripterLabel_command.cpp
+index a9d236a..4666211 100644
+--- a/src/PonscripterLabel_command.cpp
++++ b/src/PonscripterLabel_command.cpp
+@@ -1188,8 +1188,15 @@ int PonscripterLabel::resettimerCommand(const pstring& cmd)
+ }
+ 
+ 
++#ifdef ANDROID_PORT
++extern int g_story_active;
++#endif
++
+ int PonscripterLabel::resetCommand(const pstring& cmd)
+ {
++#ifdef ANDROID_PORT
++    g_story_active = 0;
++#endif
+     resetSub();
+     clearAllCurrentTextBuffers();
+     string_buffer_offset = 0;
+diff --git a/src/PonscripterLabel_event.cpp b/src/PonscripterLabel_event.cpp
+index 160aea8..6b88d96 100644
+--- a/src/PonscripterLabel_event.cpp
++++ b/src/PonscripterLabel_event.cpp
+@@ -366,9 +366,16 @@ void PonscripterLabel::trapHandler()
+ /* **************************************** *
+ * Event handlers
+ * **************************************** */
++#ifdef ANDROID_PORT
++extern int g_crop_x;
++extern "C" volatile unsigned int g_android_press_event;
++#else
++static const int g_crop_x = 0;
++#endif
++
+ void PonscripterLabel::mouseMoveEvent(SDL_MouseMotionEvent* event)
+ {
+-    current_button_state.x = event->x;
++    current_button_state.x = event->x + g_crop_x;
+     current_button_state.y = event->y;
+ 
+     if (event_mode & WAIT_BUTTON_MODE) {
+@@ -434,7 +441,7 @@ void PonscripterLabel::mousePressEvent(SDL_MouseButtonEvent* event)
+         current_button_state.down_y = -1;
+     }
+ 
+-    current_button_state.x = event->x;
++    current_button_state.x = event->x + g_crop_x;
+     current_button_state.y = event->y;
+     current_button_state.down_flag = false;
+     setSkipMode(false);
+@@ -1274,6 +1281,12 @@ int PonscripterLabel::eventLoop()
+             event = tmp_event;
+         }
+ 
++#ifdef ANDROID_PORT
++        if (g_android_press_event && event.type == g_android_press_event) {
++            androidPressButton(event.user.code);
++            continue;
++        }
++#endif
+         switch (event.type) {
+         case SDL_MOUSEMOTION:
+             mouseMoveEvent((SDL_MouseMotionEvent*) &event);
+@@ -1487,6 +1500,9 @@ int PonscripterLabel::eventLoop()
+         case SDL_WINDOWEVENT:
+             switch(event.window.event) {
+               case SDL_WINDOWEVENT_FOCUS_LOST:
++#ifdef ANDROID_PORT
++                saveAll(); // l'appli peut etre tuee en arriere-plan
++#endif
+                 break;
+               case SDL_WINDOWEVENT_FOCUS_GAINED:
+                 /* See comment below under RESIZED */
+diff --git a/src/PonscripterLabel_image.cpp b/src/PonscripterLabel_image.cpp
+index 9b743ba..99a7a6a 100644
+--- a/src/PonscripterLabel_image.cpp
++++ b/src/PonscripterLabel_image.cpp
+@@ -1,3 +1,4 @@
++#include <string>
+ /* -*- C++ -*-
+  *
+  *  PonscripterLabel_image.cpp - Image processing in Ponscripter
+@@ -490,6 +491,108 @@ void PonscripterLabel::makeMonochromeSurface( SDL_Surface *surface, SDL_Rect &cl
+ }
+ 
+ 
++#ifdef ANDROID_PORT
++extern "C" void android_send_mode(int story);
++extern "C" volatile int g_native_text_wanted;
++int g_story_active = 0; // 1 des qu'une page de l'histoire a ete envoyee, remis a 0 au retour au titre
++
++// Vrai quand la fenetre de texte est la boite ADV de l'histoire (image textbox\...) :
++// le texte est alors affiche par l'interface Android, pas par le moteur.
++bool PonscripterLabel::nativeStoryText()
++{
++    static int last = -1;
++    const char* n = sentence_font_info.image_name;
++    bool story = g_native_text_wanted && g_story_active && n && strstr(n, "textbox") != NULL;
++    if ((int) story != last) {
++        last = story;
++        android_send_mode(story ? 1 : 0);
++    }
++    // Boutons (choix, menu clic droit...) : le moteur dessine tout, sans rognage
++    // (attente de clic de l'histoire : event_mode contient aussi WAIT_TEXTBTN_MODE ;
++    //  menu ouvert : WAIT_BUTTON_MODE seul)
++    bool menuOrChoice = ((event_mode & WAIT_BUTTON_MODE) && !(event_mode & WAIT_TEXTBTN_MODE))
++                        || !select_links.empty();
++    return story && !menuOrChoice;
++}
++
++extern "C" void android_send_buttons(const char* data);
++
++// Menu de l'histoire (clic droit...) : boutons de sprites a libelle connu, affiches par Android
++static bool g_menu_redraw = false; // le menu natif vient (re)devenir actif : redessiner sans les plaques
++
++bool PonscripterLabel::nativeMenuActive()
++{
++    static bool prev = false;
++    bool act = g_native_text_wanted && g_story_active
++        && ((event_mode & WAIT_BUTTON_MODE) && !(event_mode & WAIT_TEXTBTN_MODE))
++        && select_links.empty() && !buttons.empty();
++    if (act && !prev) g_menu_redraw = true;
++    prev = act;
++    return act;
++}
++
++bool PonscripterLabel::isMenuButtonAnim(AnimationInfo* a)
++{
++    for (ButtonElt::iterator it = buttons.begin(); it != buttons.end(); ++it)
++        if (it->second.isSprite() && it->second.sprite_no >= 0 && a == &sprite_info[it->second.sprite_no])
++            return true;
++    return false;
++}
++
++void PonscripterLabel::androidPublishButtons()
++{
++    static std::string last;
++    std::string out;
++    if (nativeMenuActive()) {
++        for (ButtonElt::iterator it = buttons.begin(); it != buttons.end(); ++it) {
++            if (!it->second.isSprite() || it->second.sprite_no < 0) continue;
++            AnimationInfo* a = &sprite_info[it->second.sprite_no];
++            const char* n = a->image_name;
++            const char* f = a->file_name;
++            if (!n && !f) continue;
++            char head[32];
++            snprintf(head, sizeof(head), "%d%c", it->first, 9);
++            out += head;
++            out += n ? n : "";
++            out += (char) 9;
++            out += f ? f : "";
++            out += (char) 10;
++        }
++    }
++    bool redraw = g_menu_redraw;
++    g_menu_redraw = false;
++    if (out != last) {
++        redraw = redraw || !last.empty() || !out.empty();
++        last = out;
++        android_send_buttons(out.c_str());
++    }
++    if (redraw) {
++        // redessine la scene sans (ou avec) les plaques du menu deja incrustees
++        dirty_rect.fill(screen_width, screen_height);
++        flush(refreshMode());
++    }
++}
++
++void PonscripterLabel::androidPressButton(int id)
++{
++    if (!(event_mode & WAIT_BUTTON_MODE)) return;
++    if (id >= 0 && buttons.find(id) == buttons.end()) return;
++    current_button_state.button  = id;
++    volatile_button_state.button = id;
++    current_button_state.down_flag = false;
++    playClickVoice();
++    stopAnimation(clickstr_state);
++    advancePhase();
++}
++#else
++bool PonscripterLabel::nativeStoryText() { return false; }
++bool PonscripterLabel::nativeMenuActive() { return false; }
++bool PonscripterLabel::isMenuButtonAnim(AnimationInfo*) { return false; }
++void PonscripterLabel::androidPublishButtons() {}
++void PonscripterLabel::androidPressButton(int) {}
++#endif
++
++
+ void
+ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
+ 				 int refresh_mode)
+@@ -532,10 +635,12 @@ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
+             }
+         }
+ 
++        if (!nativeStoryText()) {
+         if (refresh_mode & REFRESH_SHADOW_MODE)
+             shadowTextDisplay(surface, clip);
+         if (refresh_mode & REFRESH_TEXT_MODE)
+             text_info.blendOnSurface(surface, 0, 0, clip);
++        }
+     }
+ 
+     if (!all_sprite_hide_flag) {
+@@ -572,13 +677,15 @@ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
+     }
+ 
+     if (!windowback_flag) {
++        if (!nativeStoryText()) {
+         if (refresh_mode & REFRESH_SHADOW_MODE)
+             shadowTextDisplay(surface, clip);
+         if (refresh_mode & REFRESH_TEXT_MODE)
+             text_info.blendOnSurface(surface, 0, 0, clip);
++        }
+     }
+ 
+-    if (refresh_mode & REFRESH_CURSOR_MODE && !textgosub_label) {
++    if (refresh_mode & REFRESH_CURSOR_MODE && !textgosub_label && !nativeStoryText()) {
+         if (clickstr_state == CLICK_WAIT)
+             drawTaggedSurface(surface, &cursor_info[CURSOR_WAIT_NO], clip);
+         else if (clickstr_state == CLICK_NEWPAGE)
+diff --git a/src/PonscripterLabel_sound.cpp b/src/PonscripterLabel_sound.cpp
+index 540cf4e..28c49a8 100644
+--- a/src/PonscripterLabel_sound.cpp
++++ b/src/PonscripterLabel_sound.cpp
+@@ -523,10 +523,17 @@ void UpdateMPEG(void *data, SMPEG_Frame *frame) {
+   c->dirty = 1;
+ }
+ 
++#ifdef ANDROID_PORT
++void androidSetFullLogical(SDL_Renderer* r, int w, int h);
++#endif
++
+ int PonscripterLabel::playMPEG(const pstring& filename, bool click_flag, bool loop_flag,
+                                bool mixsound_flag, bool nosound_flag, SubtitleDefs& subtitles)
+ {
+     int ret = 0;
++#ifdef ANDROID_PORT
++    androidSetFullLogical(renderer, screen_width, screen_height);
++#endif
+ #ifndef MP3_MAD
+     bool different_spec = false;
+     pstring mpeg_dat = ScriptHandler::cBR->getFile(filename);
+diff --git a/src/PonscripterLabel_text.cpp b/src/PonscripterLabel_text.cpp
+index 54fd13c..94659a1 100644
+--- a/src/PonscripterLabel_text.cpp
++++ b/src/PonscripterLabel_text.cpp
+@@ -97,6 +97,11 @@ PonscripterLabel::drawGlyph(SDL_Surface* dst_surface, Fontinfo* info,
+ 
+ // Returns character bytes.
+ // This is where we process ligatures for display text!
++#ifdef ANDROID_PORT
++extern "C" void android_send_page(const char* utf8, int newPage, const char* window);
++extern int g_story_active;
++#endif
++
+ int
+ PonscripterLabel::drawChar(const char* text, Fontinfo* info, bool flush_flag,
+         bool lookback_flag, SDL_Surface* surface, AnimationInfo* cache_info,
+@@ -157,16 +162,27 @@ PonscripterLabel::drawChar(const char* text, Fontinfo* info, bool flush_flag,
+ 
+         SDL_Color color;
+         SDL_Rect  dst_rect;
++#ifdef ANDROID_PORT
++        // Histoire en portrait : le texte est affiche par Android, pas sur la scene
++        SDL_Surface* glyph_surface = surface;
++        if (info == &sentence_font && sentence_font_info.image_name
++            && strstr(sentence_font_info.image_name, "textbox")) {
++            g_story_active = 1;
++            if (nativeStoryText() && surface == accumulation_surface) glyph_surface = NULL;
++        }
++#else
++        SDL_Surface* glyph_surface = surface;
++#endif
+         if (info->is_shadow) {
+             color.r = color.g = color.b = 0;
+-            drawGlyph(surface, info, color, unicode, x, y, true, cache_info,
++            drawGlyph(glyph_surface, info, color, unicode, x, y, true, cache_info,
+               clip, dst_rect);
+         }
+ 
+         color.r = info->color.r;
+         color.g = info->color.g;
+         color.b = info->color.b;    
+-        drawGlyph(surface, info, color, unicode, x, y, false, cache_info,
++        drawGlyph(glyph_surface, info, color, unicode, x, y, false, cache_info,
+           clip, dst_rect);
+ 
+     info->addShadeArea(dst_rect, shade_distance);
+@@ -196,6 +212,11 @@ PonscripterLabel::drawChar(const char* text, Fontinfo* info, bool flush_flag,
+             }
+         }
+     }
++#ifdef ANDROID_PORT
++    if (info == &sentence_font && lookback_flag && sentence_font_info.image_name
++        && strstr(sentence_font_info.image_name, "textbox") && nativeStoryText())
++        android_send_page(current_text_buffer[current_language]->contents, 2, sentence_font_info.image_name);
++#endif
+     TextBuffer_dumpstate(1);
+     return bytes;
+ }
+@@ -371,6 +392,11 @@ void PonscripterLabel::doClickEnd()
+ }
+ 
+ 
++#ifdef ANDROID_PORT
++extern "C" void android_send_page(const char* utf8, int newPage, const char* window);
++extern int g_story_active;
++#endif
++
+ int PonscripterLabel::clickWait(bool display_char)
+ {
+     const char* c = script_h.getStrBuf(string_buffer_offset);
+@@ -396,6 +422,11 @@ int PonscripterLabel::clickWait(bool display_char)
+     }
+     else {
+         clickstr_state = CLICK_WAIT;
++#ifdef ANDROID_PORT
++        if (strstr(sentence_font_info.image_name, "textbox")) g_story_active = 1;
++        if (g_story_active)
++            android_send_page(current_text_buffer[current_language]->contents, 0, sentence_font_info.image_name);
++#endif
+         if (skip_to_wait || (sentence_font.wait_time == 0)) {
+             skip_to_wait = 0;
+             flush(refreshMode());
+@@ -436,6 +467,11 @@ int PonscripterLabel::clickNewPage(bool display_char)
+     bool enabled = current_read_language == -1 || current_read_language == current_language;
+     if (enabled) {
+         clickstr_state = CLICK_NEWPAGE;
++#ifdef ANDROID_PORT
++        if (strstr(sentence_font_info.image_name, "textbox")) g_story_active = 1;
++        if (g_story_active)
++            android_send_page(current_text_buffer[current_language]->contents, 1, sentence_font_info.image_name);
++#endif
+     } else {
+         display_char = false;
+     }
+diff --git a/src/ScriptHandler.cpp b/src/ScriptHandler.cpp
+index 621df71..76d4d23 100644
+--- a/src/ScriptHandler.cpp
++++ b/src/ScriptHandler.cpp
+@@ -900,6 +900,13 @@ int ScriptHandler::readScript(DirPaths *path, const char* prefer_name)
+     }
+     
+     if (fp == NULL) {
++#ifdef ANDROID_PORT
++        {
++            pstring dbg = script_path + "0.utf";
++            FILE* t = fopen(dbg, "rb");
++            printf("[android] fopen('%s') -> %p errno=%d (%s)\n", (const char*)dbg, (void*)t, errno, strerror(errno));
++        }
++#endif
+         PonscripterMessage(Error, "Missing Game Data",
+             "No game script found. This application must be run "
+             "from a directory containing NScripter, ONScripter, "
+diff --git a/src/extlib/src/smpeg-2.0.0/audio/mpegtoraw.cpp b/src/extlib/src/smpeg-2.0.0/audio/mpegtoraw.cpp
+index 493c870..a8b4035 100644
+--- a/src/extlib/src/smpeg-2.0.0/audio/mpegtoraw.cpp
++++ b/src/extlib/src/smpeg-2.0.0/audio/mpegtoraw.cpp
+@@ -448,7 +448,6 @@ int Play_MPEGaudio(MPEGaudio *audio, Uint8 *stream, int len)
+ 	if (audio->timestamp[0] != -1){
+ 	    double timeshift = audio->Time() - audio->timestamp[0];
+ 	    double correction = 0;
+-	    assert(audio->timestamp >= 0);
+ 	    if (fabs(timeshift) > 1.0){
+ 	        correction = -timeshift;
+ #ifdef DEBUG_TIMESTAMP_SYNC
