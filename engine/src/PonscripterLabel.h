@@ -872,6 +872,7 @@ private:
 
     bool nativeStoryText();
     bool nativeMenuActive();
+    int introNoteId();
     bool isMenuButtonAnim(AnimationInfo* a);
     void androidPublishButtons();
     void androidPressButton(int id);

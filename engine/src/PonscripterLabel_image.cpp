@@ -516,6 +516,7 @@ bool PonscripterLabel::nativeStoryText()
 }
 
 extern "C" void android_send_buttons(const char* data);
+extern "C" void android_send_note(int id);
 
 // Menu de l'histoire (clic droit...) : boutons de sprites a libelle connu, affiches par Android
 static bool g_menu_redraw = false; // le menu natif vient (re)devenir actif : redessiner sans les plaques
@@ -523,7 +524,7 @@ static bool g_menu_redraw = false; // le menu natif vient (re)devenir actif : re
 bool PonscripterLabel::nativeMenuActive()
 {
     static bool prev = false;
-    bool act = g_native_text_wanted && g_story_active
+    bool act = g_native_text_wanted
         && ((event_mode & WAIT_BUTTON_MODE) && !(event_mode & WAIT_TEXTBTN_MODE))
         && select_links.empty() && !buttons.empty();
     if (act && !prev) g_menu_redraw = true;
@@ -556,7 +557,20 @@ void PonscripterLabel::androidPublishButtons()
             out += n ? n : "";
             out += (char) 9;
             out += f ? f : "";
+            char pos[48];
+            snprintf(pos, sizeof(pos), "%c%d%c%d", 9, (int) it->second.select_rect.x, 9, (int) it->second.select_rect.y);
+            out += pos;
             out += (char) 10;
+        }
+    }
+    {
+        static int lastNote = -1;
+        int note = introNoteId();
+        if (note != lastNote) {
+            lastNote = note;
+            android_send_note(note);
+            dirty_rect.fill(screen_width, screen_height);
+            flush(refreshMode());
         }
     }
     bool redraw = g_menu_redraw;
@@ -584,7 +598,20 @@ void PonscripterLabel::androidPressButton(int id)
     stopAnimation(clickstr_state);
     advancePhase();
 }
+
+// Pages d'intro TIPS MODE : texte minuscule incruste dans l'image text002/text003.png
+int PonscripterLabel::introNoteId()
+{
+    if (!g_native_text_wanted) return 0;
+    const char* f = bg_info.file_name;
+    if (!f) return 0;
+    if (strcasestr(f, "text003.png")) return 3;
+    if (strcasestr(f, "text002.png")) return 2;
+    return 0;
+}
+
 #else
+int PonscripterLabel::introNoteId() { return 0; }
 bool PonscripterLabel::nativeStoryText() { return false; }
 bool PonscripterLabel::nativeMenuActive() { return false; }
 bool PonscripterLabel::isMenuButtonAnim(AnimationInfo*) { return false; }
@@ -685,6 +712,13 @@ PonscripterLabel::refreshSurface(SDL_Surface* surface, SDL_Rect* clip_src,
         }
     }
 
+#ifdef ANDROID_PORT
+    if (introNoteId()) {
+        // le texte incruste (petit) est remplace par du texte natif : on noircit le bas de l'image
+        SDL_Rect mask = { 0, screen_height * 360 / 540, screen_width, screen_height - screen_height * 360 / 540 };
+        SDL_FillRect(surface, &mask, SDL_MapRGB(surface->format, 0, 0, 0));
+    }
+#endif
     if (refresh_mode & REFRESH_CURSOR_MODE && !textgosub_label && !nativeStoryText()) {
         if (clickstr_state == CLICK_WAIT)
             drawTaggedSurface(surface, &cursor_info[CURSOR_WAIT_NO], clip);

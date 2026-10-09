@@ -80,3 +80,17 @@ Java_dev_umineko_android_MainActivity_nativePressButton(JNIEnv*, jclass, jint id
     e.user.code = id;
     SDL_PushEvent(&e);
 }
+
+// Page d'intro a texte incruste dans l'image (0 = aucune, 2 ou 3 = pages TIPS)
+extern "C" void android_send_note(int id)
+{
+    JNIEnv* env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+    jobject act = (jobject) SDL_AndroidGetActivity();
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(cls, "onGameNote", "(I)V");
+    if (m) env->CallStaticVoidMethod(cls, m, (jint) id);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}

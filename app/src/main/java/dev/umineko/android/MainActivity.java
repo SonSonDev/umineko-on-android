@@ -159,6 +159,16 @@ public class MainActivity extends SDLActivity {
         BUTTON_NAMES.put("r_btn_oimages", "Original sprites");
         BUTTON_NAMES.put("r_btn_nimages", "New sprites");
         BUTTON_NAMES.put("volume", "Options (volume, ADV mode...)");
+        BUTTON_NAMES.put("start", "Start");
+        BUTTON_NAMES.put("web", "Controls");
+        BUTTON_NAMES.put("exit1", "Exit");
+        BUTTON_NAMES.put("website", "07th Expansion website (Japanese only)");
+        BUTTON_NAMES.put("ep1", "Episode 1");
+        BUTTON_NAMES.put("ep2_1", "Episode 2");
+        BUTTON_NAMES.put("ep3_1", "Episode 3");
+        BUTTON_NAMES.put("ep4_1", "Episode 4");
+        BUTTON_NAMES.put("load", "Load game");
+        BUTTON_NAMES.put("unlock", "Unlock");
     }
 
     // Libelle d'un bouton : texte du sprite (":s#FFFFFF^~c4~Texte") ou nom du fichier image
@@ -178,33 +188,109 @@ public class MainActivity extends SDLActivity {
         return nice != null ? nice : base;
     }
 
+    // Pages d'intro dont le texte est incruste dans l'image : texte natif a la place
+    public static void onGameNote(int id) {
+        final MainActivity a = instance;
+        if (a != null) a.runOnUiThread(() -> a.showNote(id));
+    }
+
+    private TextView noteView;
+    private ScrollView noteScroll;
+
+    private void showNote(int id) {
+        if (id == 0) {
+            noteScroll.setVisibility(View.GONE);
+            return;
+        }
+        String nl2 = String.valueOf((char) 10) + (char) 10;
+        String body = "New function: TIPS MODE" + nl2
+                + "In the middle of the game, at any time, tap Menu to open the TIPS MODE." + nl2
+                + "Besides the save and load functions, you can view character profiles and more. "
+                + "Additional information will be added as you progress through the story. "
+                + "It is a good idea to take a peek here every once in a while.";
+        if (id == 3) body += nl2 + "Tap to start the game.";
+        noteView.setText(body);
+        noteView.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(15f, textSp * 0.82f));
+        noteScroll.setVisibility(View.VISIBLE);
+        noteScroll.scrollTo(0, 0);
+        hintText.setVisibility(View.GONE);
+    }
+
     private LinearLayout menuList;
     private ScrollView menuView;
 
+    private static final class MenuItem {
+        int id, x, y;
+        String label;
+    }
+
+    private Button menuButton(MenuItem it, int sp) {
+        Button b = makeButton(it.label, sp, Color.rgb(52, 46, 70));
+        final int id = it.id;
+        b.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            nativePressButton(id);
+        });
+        return b;
+    }
+
     private void showMenu(String data) {
         menuList.removeAllViews();
-        String[] lines = data.split(String.valueOf((char) 10));
-        int count = 0;
-        for (String line : lines) {
+        java.util.ArrayList<MenuItem> items = new java.util.ArrayList<>();
+        for (String line : data.split(String.valueOf((char) 10))) {
             if (line.isEmpty()) continue;
             String[] f = line.split(String.valueOf((char) 9), -1);
             if (f.length < 3) continue;
-            final int id;
-            try { id = Integer.parseInt(f[0]); } catch (NumberFormatException e) { continue; }
-            String label = buttonLabel(f[1], f[2]);
-            if (label.isEmpty()) continue;
-            Button b = makeButton(label, 18, Color.rgb(52, 46, 70));
-            b.setOnClickListener(v -> {
-                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                nativePressButton(id);
-            });
+            MenuItem it = new MenuItem();
+            try {
+                it.id = Integer.parseInt(f[0]);
+                if (f.length >= 5) { it.x = Integer.parseInt(f[3]); it.y = Integer.parseInt(f[4]); }
+            } catch (NumberFormatException e) { continue; }
+            it.label = buttonLabel(f[1], f[2]);
+            if (it.label.isEmpty()) continue;
+            items.add(it);
+        }
+        // ordre de lecture : de haut en bas, puis de gauche a droite
+        java.util.Collections.sort(items, (p, q) -> p.y != q.y ? Integer.compare(p.y, q.y) : Integer.compare(p.x, q.x));
+        boolean[] used = new boolean[items.size()];
+        int count = 0;
+        for (int i = 0; i < items.size(); i++) {
+            if (used[i]) continue;
+            MenuItem it = items.get(i);
+            used[i] = true;
+            boolean unlock = it.label.equals("Unlock");
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(58));
             lp.setMargins(dp(16), dp(6), dp(16), dp(6));
-            menuList.addView(b, lp);
+            // un bouton Unlock est affiche sur la meme ligne que l'element qui l'accompagne,
+            // quel que soit l'ordre dans lequel le tri les place
+            MenuItem mate = null;
+            for (int k = 0; k < items.size(); k++) {
+                MenuItem o = items.get(k);
+                if (!used[k] && Math.abs(o.y - it.y) < 12 && o.label.equals("Unlock") != unlock) {
+                    mate = o;
+                    used[k] = true;
+                    break;
+                }
+            }
+            if (mate != null) {
+                MenuItem unlockItem = unlock ? it : mate;
+                MenuItem mainItem = unlock ? mate : it;
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                Button ub = menuButton(unlockItem, 14);
+                ub.setText("Unlock " + mainItem.label);
+                row.addView(ub, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+                LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.4f);
+                ml.leftMargin = dp(8);
+                row.addView(menuButton(mainItem, 18), ml);
+                menuList.addView(row, lp);
+            } else {
+                menuList.addView(menuButton(it, 18), lp);
+            }
             count++;
         }
-        if (count > 0) {
+        if (count > 0 && storyMode) {
             Button close = makeButton("Close menu", 16, Color.rgb(120, 52, 52));
             close.setOnClickListener(v -> nativePressButton(-1));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -413,6 +499,32 @@ public class MainActivity extends SDLActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         historyView.setOnClickListener(v -> toggleHistory());
         attachReaderGestures(reader);
+        noteView = new TextView(this);
+        noteView.setTextColor(Color.rgb(240, 236, 228));
+        noteView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp);
+        noteView.setTypeface(Typeface.SERIF);
+        noteView.setLineSpacing(0, 1.25f);
+        noteView.setPadding(dp(20), dp(18), dp(20), dp(12));
+        noteScroll = new ScrollView(this);
+        noteScroll.addView(noteView, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        noteScroll.setVisibility(View.GONE);
+        final float noteSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+        final float[] noteDown = new float[2];
+        noteScroll.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                noteDown[0] = ev.getX();
+                noteDown[1] = ev.getY();
+            } else if (ev.getActionMasked() == MotionEvent.ACTION_UP
+                    && Math.abs(ev.getX() - noteDown[0]) < noteSlop * 2
+                    && Math.abs(ev.getY() - noteDown[1]) < noteSlop * 2) {
+                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                sendKey(KeyEvent.KEYCODE_ENTER);
+            }
+            return false; // le defilement reste gere par le ScrollView
+        });
+        reader.addView(noteScroll, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         menuView = new ScrollView(this);
         menuView.setBackgroundColor(Color.rgb(16, 14, 20));
         menuView.setVisibility(View.GONE);

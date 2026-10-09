@@ -93,3 +93,9 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 - Pendant une vidéo, la taille logique du rendu repasse en 960×540 (`androidSetFullLogical`) pour ne pas l'étirer dans la zone rognée. Non vérifié visuellement.
 - Les interfaces sont en anglais (menu natif, barre, historique).
 - Navigation de test : au titre, trois appuis par entrée (survol, puis clic).
+
+## Menus du titre et page d'intro (2026-10-09)
+- `nativeMenuActive()` ne dépend plus du mode histoire : tout écran à boutons de sprites (`spbtn`) dont le moteur attend un bouton est affiché par Android. Le moteur envoie `id TAB image TAB fichier TAB x TAB y` ; Android trie par position (haut en bas, gauche à droite), traduit les noms de fichiers (`start` → Start, `web` → Controls, `exit1` → Exit, `ep2_1` → Episode 2…) et met chaque « Unlock » sur la ligne de son élément. « Close menu » n'apparaît qu'en histoire.
+- Page d'intro « TIPS MODE » : le texte est incrusté dans `BMP\background\efe\text002/text003.png` (plein cadre 1920×1080). `introNoteId()` reconnaît ces fonds ; le moteur noircit le bas de l'image (à partir de 360/540) et `MainActivity.showNote` affiche le texte en natif, défilable, tap = avancer (le « clic droit » devient le bouton Menu).
+- Le panneau ne mélange plus les pages : seul le texte de l'histoire est envoyé.
+- Restent dessinés par le moteur : langue, notice, choix ADV, ombre portée, choix de l'opening (écrans `select`/textbtn).
