@@ -155,10 +155,10 @@ public class MainActivity extends SDLActivity {
     static {
         BUTTON_NAMES.put("r_btn_clear", "Hide text");
         BUTTON_NAMES.put("r_btn_language", "Switch language");
-        BUTTON_NAMES.put("r_btn_system", "System (save, load, title...)");
+        BUTTON_NAMES.put("r_btn_system", "System");
         BUTTON_NAMES.put("r_btn_oimages", "Original sprites");
         BUTTON_NAMES.put("r_btn_nimages", "New sprites");
-        BUTTON_NAMES.put("volume", "Options (volume, ADV mode...)");
+        BUTTON_NAMES.put("volume", "Options");
         BUTTON_NAMES.put("start", "Start");
         BUTTON_NAMES.put("web", "Controls");
         BUTTON_NAMES.put("exit1", "Exit");
@@ -285,27 +285,136 @@ public class MainActivity extends SDLActivity {
         return l.contains("savearea") || l.contains("loadarea");
     }
 
+    private static final int C_BASE = Color.rgb(52, 46, 70);
+    private static final int C_PRIMARY = Color.rgb(132, 60, 88);
+    private static final int C_DANGER = Color.rgb(104, 42, 50);
+    private static final int C_MUTED = Color.rgb(36, 34, 48);
+
     private static final class MenuItem {
         int id, x, y;
         String label;
         String info = "";
+        MenuItem unlock;
     }
 
-    private Button menuButton(MenuItem it, int sp) {
-        String text = it.label;
-        if (isSlotName(it.label)) {
-            int slot = it.id > 50 ? ((it.id - 51) % 8) + 1 : it.id;
-            text = "Slot " + slot + (it.info.isEmpty() ? "  -  empty" : "  -  " + it.info);
-        }
-        Button b = makeButton(text, sp, Color.rgb(52, 46, 70));
-        b.setMinHeight(dp(58));
-        b.setPadding(dp(12), dp(8), dp(12), dp(8));
-        final int id = it.id;
+    private static boolean isPage(String l) {
+        return l.toLowerCase().startsWith("page ");
+    }
+
+    private static boolean isStepper(String l) {
+        return l.length() > 1 && (l.endsWith("+") || l.endsWith("-"));
+    }
+
+    // Libelle affiche : sans la parenthese finale explicative
+    private static String shortLabel(String l) {
+        int p = l.indexOf(" (");
+        return p > 0 && l.endsWith(")") ? l.substring(0, p) : l;
+    }
+
+    private Button styled(String text, int sp, int color, int minHdp, final int id) {
+        Button b = makeButton(text, sp, color);
+        if (minHdp > 0) b.setMinHeight(dp(minHdp));
+        b.setPadding(dp(10), dp(6), dp(10), dp(6));
         b.setOnClickListener(v -> {
             v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
             nativePressButton(id);
         });
         return b;
+    }
+
+    private LinearLayout hrow(int heightDp, int topDp) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                heightDp > 0 ? dp(heightDp) : ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(dp(12), dp(topDp), dp(12), 0);
+        menuList.addView(row, lp);
+        return row;
+    }
+
+    private void cell(LinearLayout row, View v, float weight) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight);
+        lp.setMargins(dp(4), 0, dp(4), 0);
+        row.addView(v, lp);
+    }
+
+    private void fixedCell(LinearLayout row, View v, int widthDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(widthDp), ViewGroup.LayoutParams.MATCH_PARENT);
+        lp.setMargins(dp(4), 0, dp(4), 0);
+        row.addView(v, lp);
+    }
+
+    // Grille de boutons de meme poids ; un dernier element seul prend toute la largeur
+    private void addGrid(java.util.List<MenuItem> list, int cols, int color, int sp, int heightDp) {
+        for (int i = 0; i < list.size(); i += cols) {
+            LinearLayout row = hrow(heightDp, 8);
+            for (int c = 0; c < cols && i + c < list.size(); c++) {
+                MenuItem it = list.get(i + c);
+                cell(row, styled(shortLabel(it.label), sp, color, 0, it.id), 1f);
+            }
+        }
+    }
+
+    private Button unlockChip(MenuItem u) {
+        Button b = styled("Unlock", 12, C_MUTED, 0, u.id);
+        b.setTextColor(Color.rgb(176, 168, 196));
+        return b;
+    }
+
+    private int curPage = 1;
+
+    private View slotCard(MenuItem it) {
+        int slot = (curPage - 1) * 8 + (it.id > 50 ? ((it.id - 51) % 8) + 1 : it.id);
+        boolean empty = it.info.isEmpty();
+        String date = it.info;
+        String title = "";
+        int cut = it.info.indexOf(" - ");
+        if (cut > 0) {
+            date = it.info.substring(0, cut);
+            title = it.info.substring(cut + 3);
+        }
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(empty ? C_MUTED : C_BASE);
+        bg.setCornerRadius(dp(14));
+        card.setBackground(bg);
+        card.setPadding(dp(8), dp(8), dp(12), dp(8));
+
+        TextView badge = new TextView(this);
+        badge.setText(String.valueOf(slot));
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        badge.setTypeface(Typeface.SERIF, Typeface.BOLD);
+        badge.setTextColor(empty ? Color.rgb(110, 104, 128) : Color.rgb(232, 190, 120));
+        badge.setGravity(Gravity.CENTER);
+        card.addView(badge, new LinearLayout.LayoutParams(dp(46), ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView l1 = new TextView(this);
+        l1.setText(empty ? "Empty" : date);
+        l1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        l1.setTextColor(empty ? Color.rgb(120, 114, 138) : Color.WHITE);
+        if (!empty) l1.setTypeface(Typeface.DEFAULT_BOLD);
+        col.addView(l1);
+        if (!title.isEmpty()) {
+            TextView l2 = new TextView(this);
+            l2.setText(title);
+            l2.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            l2.setTextColor(Color.rgb(190, 184, 206));
+            col.addView(l2);
+        }
+        card.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        card.setMinimumHeight(dp(64));
+        final int id = it.id;
+        card.setClickable(true);
+        card.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            nativePressButton(id);
+        });
+        return card;
     }
 
     private boolean choicesShown = false;
@@ -339,8 +448,7 @@ public class MainActivity extends SDLActivity {
             }
             items.add(it);
         }
-        // ordre de lecture : de haut en bas, puis de gauche a droite
-        // emplacements de sauvegarde : une seule ligne virtuelle, classee par numero (ordre total coherent)
+        // ordre de lecture ; les emplacements forment une ligne virtuelle classee par numero
         int slotY = Integer.MAX_VALUE;
         for (MenuItem it : items)
             if (isSlotName(it.label)) slotY = Math.min(slotY, it.y);
@@ -348,53 +456,154 @@ public class MainActivity extends SDLActivity {
             if (isSlotName(it.label)) { it.y = slotY; it.x = it.id; }
         java.util.Collections.sort(items, (p, q) ->
                 p.y != q.y ? Integer.compare(p.y, q.y) : Integer.compare(p.x, q.x));
-        boolean[] used = new boolean[items.size()];
-        int count = 0;
-        for (int i = 0; i < items.size(); i++) {
-            if (used[i]) continue;
-            MenuItem it = items.get(i);
-            used[i] = true;
-            boolean unlock = it.label.equals("Unlock");
+
+        // un bouton "Unlock" accompagne l'element place sur la meme ligne
+        java.util.ArrayList<MenuItem> unlocks = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> rest = new java.util.ArrayList<>();
+        for (MenuItem it : items) {
+            if (it.label.equals("Unlock")) unlocks.add(it); else rest.add(it);
+        }
+        for (MenuItem u : unlocks) {
+            MenuItem best = null;
+            for (MenuItem it : rest)
+                if (it.unlock == null && Math.abs(it.y - u.y) < 12 && (best == null || Math.abs(it.x - u.x) < Math.abs(best.x - u.x)))
+                    best = it;
+            if (best != null) best.unlock = u; else rest.add(u);
+        }
+
+        boolean titleScreen = false;
+        for (MenuItem it : rest)
+            if (it.label.equals("Start") || it.label.equals("Controls")) titleScreen = true;
+
+        java.util.ArrayList<MenuItem> tabs = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> primary = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> slots = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> episodes = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> plain = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> withUnlock = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> links = new java.util.ArrayList<>();
+        java.util.ArrayList<MenuItem> footer = new java.util.ArrayList<>();
+        java.util.LinkedHashMap<String, MenuItem[]> steppers = new java.util.LinkedHashMap<>();
+        for (MenuItem it : rest) {
+            String l = it.label;
+            String low = l.toLowerCase();
+            if (isSlotName(l)) slots.add(it);
+            else if (isPage(l)) tabs.add(it);
+            else if (l.equals("Start") || l.equals("Episode 1")) primary.add(it);
+            else if (l.startsWith("Episode ")) episodes.add(it);
+            else if (low.contains("website")) links.add(it);
+            else if (low.equals("exit") || low.contains("title")) footer.add(it);
+            else if (isStepper(l)) {
+                String base = l.substring(0, l.length() - 1);
+                MenuItem[] pair = steppers.get(base);
+                if (pair == null) { pair = new MenuItem[2]; steppers.put(base, pair); }
+                pair[l.endsWith("+") ? 1 : 0] = it;
+            }
+            else if (it.unlock != null) withUnlock.add(it);
+            else plain.add(it);
+        }
+
+        curPage = 1;
+        for (MenuItem t : tabs) {
+            if (t.label.contains("current")) {
+                try { curPage = Integer.parseInt(t.label.substring(5, 6)); } catch (Exception e) { curPage = 1; }
+            }
+        }
+        // 1. pages : onglets
+        if (!tabs.isEmpty()) {
+            LinearLayout row = hrow(44, 10);
+            for (MenuItem t : tabs) {
+                boolean cur = t.label.contains("current");
+                Button b = styled(t.label.replace(" (current)", ""), 12, cur ? C_PRIMARY : C_MUTED, 0, t.id);
+                if (!cur) b.setTextColor(Color.rgb(190, 184, 206));
+                cell(row, b, 1f);
+            }
+        }
+        // 2. action principale
+        for (MenuItem it : primary) {
+            LinearLayout row = hrow(titleScreen ? 76 : 70, 12);
+            cell(row, styled(it.label, 20, C_PRIMARY, 0, it.id), 1f);
+        }
+        // 3. reglages a +/-
+        for (java.util.Map.Entry<String, MenuItem[]> e : steppers.entrySet()) {
+            MenuItem[] pair = e.getValue();
+            LinearLayout row = hrow(54, 10);
+            TextView name = new TextView(this);
+            name.setText(e.getKey().replace("Music/SoundEffect", "Music & sound effects"));
+            name.setTextColor(Color.rgb(236, 232, 224));
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            name.setGravity(Gravity.CENTER_VERTICAL);
+            name.setPadding(dp(8), 0, 0, 0);
+            cell(row, name, 1f);
+            if (pair[0] != null) fixedCell(row, styled("−", 22, C_BASE, 0, pair[0].id), 64);
+            if (pair[1] != null) fixedCell(row, styled("+", 22, C_BASE, 0, pair[1].id), 64);
+        }
+        // 4. emplacements de sauvegarde
+        for (MenuItem s : slots) {
+            View card = slotCard(s);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(16), dp(6), dp(16), dp(6));
-            // un bouton Unlock est affiche sur la meme ligne que l'element qui l'accompagne,
-            // quel que soit l'ordre dans lequel le tri les place
-            MenuItem mate = null;
-            for (int k = 0; k < items.size(); k++) {
-                MenuItem o = items.get(k);
-                if (!used[k] && Math.abs(o.y - it.y) < 12 && o.label.equals("Unlock") != unlock) {
-                    mate = o;
-                    used[k] = true;
-                    break;
+            lp.setMargins(dp(16), dp(8), dp(16), 0);
+            menuList.addView(card, lp);
+        }
+        // 5. episodes : cartes, avec leur pastille Unlock
+        int epCols = episodes.size() <= 3 ? Math.max(1, episodes.size()) : 2;
+        for (int i = 0; i < episodes.size(); i += epCols) {
+            LinearLayout row = hrow(104, 10);
+            for (int c = 0; c < epCols && i + c < episodes.size(); c++) {
+                MenuItem it = episodes.get(i + c);
+                LinearLayout col = new LinearLayout(this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64));
+                col.addView(styled(it.label.replace("Episode ", "Ep. "), 17, C_BASE, 0, it.id), a);
+                if (it.unlock != null) {
+                    LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(34));
+                    b.topMargin = dp(6);
+                    col.addView(unlockChip(it.unlock), b);
                 }
+                cell(row, col, 1f);
             }
-            if (mate != null) {
-                MenuItem unlockItem = unlock ? it : mate;
-                MenuItem mainItem = unlock ? mate : it;
-                LinearLayout row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                Button ub = menuButton(unlockItem, 14);
-                ub.setText("Unlock " + mainItem.label);
-                row.addView(ub, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-                LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.4f);
-                ml.leftMargin = dp(8);
-                row.addView(menuButton(mainItem, 18), ml);
-                menuList.addView(row, lp);
-            } else {
-                menuList.addView(menuButton(it, 18), lp);
+        }
+        // 6. actions courtes : grille ; textes longs : une colonne
+        boolean allShort = true;
+        for (MenuItem it : plain) if (shortLabel(it.label).length() > 24) allShort = false;
+        addGrid(plain, allShort && plain.size() > 1 ? 2 : 1, C_BASE, 16, 62);
+        for (MenuItem it : withUnlock) {
+            LinearLayout row = hrow(62, 8);
+            cell(row, styled(shortLabel(it.label), 16, C_BASE, 0, it.id), 1f);
+            fixedCell(row, unlockChip(it.unlock), 92);
+        }
+        // 7. liens discrets
+        for (MenuItem it : links) {
+            LinearLayout row = hrow(42, 14);
+            Button b = styled(shortLabel(it.label), 13, C_MUTED, 0, it.id);
+            b.setTextColor(Color.rgb(160, 154, 180));
+            cell(row, b, 1f);
+        }
+        // 8. pied de page : retour / actions destructives
+        if (!footer.isEmpty()) {
+            LinearLayout row = hrow(56, 18);
+            for (MenuItem it : footer) {
+                boolean back = it.label.equalsIgnoreCase("exit") && !titleScreen;
+                String ft = it.label.equalsIgnoreCase("title") ? "Return to title" : shortLabel(it.label);
+                Button b = styled(back ? "Back" : ft, 15, back ? C_MUTED : C_DANGER, 0, it.id);
+                if (back) b.setTextColor(Color.rgb(190, 184, 206));
+                cell(row, b, 1f);
             }
-            count++;
         }
-        if (count > 0 && storyMode) {
-            Button close = makeButton("Close menu", 16, Color.rgb(120, 52, 52));
-            close.setOnClickListener(v -> nativePressButton(-1));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
-            lp.setMargins(dp(16), dp(14), dp(16), dp(10));
-            menuList.addView(close, lp);
+        int count = items.size();
+        boolean hasBack = false;
+        for (MenuItem it : footer) if (it.label.equalsIgnoreCase("exit") && !titleScreen) hasBack = true;
+        if (count > 0 && storyMode && !hasBack) {
+            LinearLayout row = hrow(54, footer.isEmpty() ? 18 : 10);
+            Button close = styled("Close menu", 15, C_MUTED, 0, -1);
+            close.setTextColor(Color.rgb(190, 184, 206));
+            cell(row, close, 1f);
         }
+        View pad = new View(this);
+        menuList.addView(pad, new LinearLayout.LayoutParams(1, dp(16)));
         menuView.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+        menuView.scrollTo(0, 0);
     }
 
     // 1 = l'histoire est affichee par l'interface, 0 = le moteur dessine tout (titre, menus...)

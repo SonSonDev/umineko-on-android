@@ -109,3 +109,9 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 - Ordre : les emplacements forment une ligne virtuelle classée par numéro (le tri par position les entrelaçait en deux colonnes) ; pages 1 à 5 traduites. Le bouton « Load game » de l'écran Save bascule en mode chargement.
 - Les vignettes et textes de sauvegarde restent dessinés dans la scène (visibles en haut).
 - Écran de chargement du titre : mêmes emplacements, cadres `bmp\system\loadarea_w.png` (reconnus comme `savearea`). Le jeu ne crée des boutons que pour les emplacements occupés, donc seuls ceux-là sont listés. Chargement testé depuis le titre (emplacement 1).
+
+### Disposition des menus natifs (2026-10-09)
+- `showMenu` classe chaque bouton (page, emplacement, action principale, épisode, réglage +/−, lien, pied de page, action courte) et compose l'écran par sections, dans cet ordre : onglets de pages, action principale (large, couleur), réglages à +/−, emplacements (cartes : numéro, date en gras, titre en gris, « Empty » estompé), épisodes (une rangée + pastille Unlock), actions courtes (grille 2 colonnes si libellés ≤ 24 caractères, sinon une colonne), liens discrets, pied de page.
+- Pied de page : « Exit » devient « Back » hors du titre ; « Title » devient « Return to title » (rouge) ; « Close menu » n'apparaît que sans « Back ».
+- Numéro d'emplacement = (page − 1) × 8 + rang.
+- Reste à faire : afficher les valeurs courantes (Music: 40, Voices: 70…) à côté des réglages au lieu de les laisser dans la scène.
