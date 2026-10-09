@@ -108,3 +108,4 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 - Les emplacements sont des boutons de sprites `bmp\system\savearea_w.png` (ids 51 à 58). Le moteur joint à chacun le texte des sprites posés dans son cadre (date `Ep1: Oct 9, 10:40 PM`, titre de l'épisode) ; Android affiche « Slot N - date - titre » ou « Slot N - empty », sans le préfixe de style `:s/8,16,1;`.
 - Ordre : les emplacements forment une ligne virtuelle classée par numéro (le tri par position les entrelaçait en deux colonnes) ; pages 1 à 5 traduites. Le bouton « Load game » de l'écran Save bascule en mode chargement.
 - Les vignettes et textes de sauvegarde restent dessinés dans la scène (visibles en haut).
+- Écran de chargement du titre : mêmes emplacements, cadres `bmp\system\loadarea_w.png` (reconnus comme `savearea`). Le jeu ne crée des boutons que pour les emplacements occupés, donc seuls ceux-là sont listés. Chargement testé depuis le titre (emplacement 1).

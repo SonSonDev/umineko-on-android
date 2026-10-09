@@ -583,7 +583,7 @@ void PonscripterLabel::androidPublishButtons()
             out += pos;
             // emplacements de sauvegarde : texte des sprites poses dans le cadre (date, commentaire)
             out += (char) 9;
-            if (f && strcasestr(f, "savearea")) {
+            if (f && (strcasestr(f, "savearea") || strcasestr(f, "loadarea"))) {
                 SDL_Rect r = it->second.select_rect;
                 for (int k = 0; k < MAX_SPRITE_NUM; ++k) {
                     if (k == it->second.sprite_no) continue;

@@ -280,6 +280,11 @@ public class MainActivity extends SDLActivity {
     private LinearLayout menuList;
     private ScrollView menuView;
 
+    private static boolean isSlotName(String s) {
+        String l = s.toLowerCase();
+        return l.contains("savearea") || l.contains("loadarea");
+    }
+
     private static final class MenuItem {
         int id, x, y;
         String label;
@@ -288,7 +293,7 @@ public class MainActivity extends SDLActivity {
 
     private Button menuButton(MenuItem it, int sp) {
         String text = it.label;
-        if (it.label.toLowerCase().startsWith("savearea")) {
+        if (isSlotName(it.label)) {
             int slot = it.id > 50 ? ((it.id - 51) % 8) + 1 : it.id;
             text = "Slot " + slot + (it.info.isEmpty() ? "  -  empty" : "  -  " + it.info);
         }
@@ -320,7 +325,7 @@ public class MainActivity extends SDLActivity {
             } catch (NumberFormatException e) { continue; }
             it.label = buttonLabel(f[1], f[2]);
             if (it.label.isEmpty()) continue;
-            if (f.length >= 6 && f[2].toLowerCase().contains("savearea")) {
+            if (f.length >= 6 && isSlotName(f[2])) {
                 StringBuilder sb = new StringBuilder();
                 for (String part : f[5].split(String.valueOf((char) 2))) {
                     String tagless = part.startsWith(":") && part.indexOf(';') > 0 ? part.substring(part.indexOf(';') + 1) : part;
@@ -338,9 +343,9 @@ public class MainActivity extends SDLActivity {
         // emplacements de sauvegarde : une seule ligne virtuelle, classee par numero (ordre total coherent)
         int slotY = Integer.MAX_VALUE;
         for (MenuItem it : items)
-            if (it.label.toLowerCase().startsWith("savearea")) slotY = Math.min(slotY, it.y);
+            if (isSlotName(it.label)) slotY = Math.min(slotY, it.y);
         for (MenuItem it : items)
-            if (it.label.toLowerCase().startsWith("savearea")) { it.y = slotY; it.x = it.id; }
+            if (isSlotName(it.label)) { it.y = slotY; it.x = it.id; }
         java.util.Collections.sort(items, (p, q) ->
                 p.y != q.y ? Integer.compare(p.y, q.y) : Integer.compare(p.x, q.x));
         boolean[] used = new boolean[items.size()];
