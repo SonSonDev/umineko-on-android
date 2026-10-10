@@ -419,9 +419,81 @@ public class MainActivity extends SDLActivity {
 
     private boolean choicesShown = false;
 
+    // Image de description (TIPS, personnage) : texte incruste, affiche agrandi en tete du menu
+    private android.graphics.Bitmap tipsBitmap;
+
+    // Vignettes des boutons de personnages : [id, largeur, hauteur, pixels...] repete
+    private static final class Thumb {
+        int x, y;
+        android.graphics.Bitmap bmp;
+    }
+    private String lastMenuData = "";
+    private final java.util.HashMap<Integer, Thumb> thumbInfo = new java.util.HashMap<>();
+
+    public static void onGameThumbs(int[] d) {
+        final MainActivity a = instance;
+        if (a == null) return;
+        final java.util.HashMap<Integer, Thumb> m = new java.util.HashMap<>();
+        int i = 0;
+        while (d != null && i + 5 <= d.length) {
+            int id = d[i], x = d[i + 1], y = d[i + 2], w = d[i + 3], h = d[i + 4];
+            i += 5;
+            if (w <= 0 || h <= 0 || i + w * h > d.length) break;
+            Thumb t = new Thumb();
+            t.x = x; t.y = y;
+            t.bmp = android.graphics.Bitmap.createBitmap(d, i, w, w, h, android.graphics.Bitmap.Config.ARGB_8888);
+            m.put(id, t);
+            i += w * h;
+        }
+        a.runOnUiThread(() -> {
+            a.thumbInfo.clear();
+            a.thumbInfo.putAll(m);
+            a.showMenu(a.lastMenuData);
+        });
+    }
+
+    public static void onGameTipsImage(int w, int h, int[] argb) {
+        final MainActivity a = instance;
+        if (a == null) return;
+        android.graphics.Bitmap full = (w > 0 && h > 0 && argb != null)
+                ? android.graphics.Bitmap.createBitmap(argb, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                : null;
+        if (full != null) {
+            // rogne les marges transparentes autour du texte
+            int x0 = w, y0 = h, x1 = -1, y1 = -1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    if ((argb[y * w + x] >>> 24) > 16) {
+                        if (x < x0) x0 = x;
+                        if (x > x1) x1 = x;
+                        if (y < y0) y0 = y;
+                        if (y > y1) y1 = y;
+                    }
+            if (x1 >= x0 && y1 >= y0) {
+                x0 = Math.max(0, x0 - 6); y0 = Math.max(0, y0 - 6);
+                x1 = Math.min(w - 1, x1 + 6); y1 = Math.min(h - 1, y1 + 6);
+                full = android.graphics.Bitmap.createBitmap(full, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+            }
+        }
+        final android.graphics.Bitmap bmp = full;
+        a.runOnUiThread(() -> {
+            a.tipsBitmap = bmp;
+            a.showMenu(a.lastMenuData);
+        });
+    }
+
     private void showMenu(String data) {
         if (choicesShown && data.isEmpty()) return; // les choix (select) occupent deja cette zone
+        lastMenuData = data;
         menuList.removeAllViews();
+        if (tipsBitmap != null) {
+            android.widget.ImageView iv = new android.widget.ImageView(this);
+            iv.setImageBitmap(tipsBitmap);
+            iv.setAdjustViewBounds(true);
+            iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+            menuList.addView(iv, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         java.util.ArrayList<MenuItem> items = new java.util.ArrayList<>();
         for (String line : data.split(String.valueOf((char) 10))) {
             if (line.isEmpty()) continue;
@@ -475,6 +547,7 @@ public class MainActivity extends SDLActivity {
         for (MenuItem it : rest)
             if (it.label.equals("Start") || it.label.equals("Controls")) titleScreen = true;
 
+        java.util.ArrayList<MenuItem> portraits = new java.util.ArrayList<>();
         java.util.ArrayList<MenuItem> tabs = new java.util.ArrayList<>();
         java.util.ArrayList<MenuItem> primary = new java.util.ArrayList<>();
         java.util.ArrayList<MenuItem> slots = new java.util.ArrayList<>();
@@ -487,7 +560,8 @@ public class MainActivity extends SDLActivity {
         for (MenuItem it : rest) {
             String l = it.label;
             String low = l.toLowerCase();
-            if (isSlotName(l)) slots.add(it);
+            if (thumbInfo.containsKey(it.id) && it.id >= 0) portraits.add(it);
+            else if (isSlotName(l)) slots.add(it);
             else if (isPage(l)) tabs.add(it);
             else if (l.equals("Start") || l.equals("Episode 1")) primary.add(it);
             else if (l.startsWith("Episode ")) episodes.add(it);
@@ -563,6 +637,53 @@ public class MainActivity extends SDLActivity {
                 }
                 cell(row, col, 1f);
             }
+        }
+        // portraits des personnages : l'arbre de la scene, agrandi, avec ses liens et ses emplacements
+        if (!thumbInfo.isEmpty()) {
+            int wpx = getResources().getDisplayMetrics().widthPixels;
+            int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = 0, maxY = 0;
+            java.util.ArrayList<Integer> order = new java.util.ArrayList<>(thumbInfo.keySet());
+            // fonds d'abord (ids <= -1000 et > -100000), puis cases vides, puis portraits cliquables
+            java.util.Collections.sort(order, (p, q) -> {
+                int rp = p >= 0 ? 2 : (p <= -100000 ? 1 : 0), rq = q >= 0 ? 2 : (q <= -100000 ? 1 : 0);
+                return rp != rq ? Integer.compare(rp, rq) : Integer.compare(p, q);
+            });
+            for (int id : order) {
+                Thumb t = thumbInfo.get(id);
+                minX = Math.min(minX, t.x); minY = Math.min(minY, t.y);
+                maxX = Math.max(maxX, t.x + t.bmp.getWidth());
+                maxY = Math.max(maxY, t.y + t.bmp.getHeight());
+            }
+            float sc = (wpx * 0.66f) / Math.max(1, maxX - minX);
+            FrameLayout tree = new FrameLayout(this);
+            for (int id : order) {
+                final int pid = id;
+                Thumb t = thumbInfo.get(id);
+                android.widget.ImageView iv;
+                if (id >= 0) {
+                    iv = new android.widget.ImageButton(this);
+                    iv.setBackgroundColor(Color.TRANSPARENT);
+                    iv.setOnClickListener(v -> {
+                        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                        nativePressButton(pid);
+                    });
+                } else {
+                    iv = new android.widget.ImageView(this);
+                }
+                iv.setImageBitmap(t.bmp);
+                iv.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+                iv.setPadding(0, 0, 0, 0);
+                FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(
+                        Math.round(t.bmp.getWidth() * sc), Math.round(t.bmp.getHeight() * sc));
+                pl.leftMargin = Math.round((t.x - minX) * sc);
+                pl.topMargin = Math.round((t.y - minY) * sc);
+                tree.addView(iv, pl);
+            }
+            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+                    Math.round((maxX - minX) * sc), Math.round((maxY - minY) * sc));
+            tl.gravity = Gravity.CENTER_HORIZONTAL;
+            tl.topMargin = dp(12);
+            menuList.addView(tree, tl);
         }
         // 6. actions courtes : grille ; textes longs : une colonne
         boolean allShort = true;

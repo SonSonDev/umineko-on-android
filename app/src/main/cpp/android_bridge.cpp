@@ -112,3 +112,44 @@ extern "C" void android_send_choices(const char* data)
     env->DeleteLocalRef(arr);
     env->DeleteLocalRef(act);
 }
+
+// Image de description (TIPS, personnage) : pixels ARGB, w = 0 pour l'effacer
+extern "C" void android_send_tips_image(int w, int h, const unsigned int* argb)
+{
+    JNIEnv* env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+    jobject act = (jobject) SDL_AndroidGetActivity();
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(cls, "onGameTipsImage", "(II[I)V");
+    if (m) {
+        jintArray arr = NULL;
+        if (w > 0 && h > 0 && argb) {
+            arr = env->NewIntArray(w * h);
+            env->SetIntArrayRegion(arr, 0, w * h, (const jint*) argb);
+        }
+        env->CallStaticVoidMethod(cls, m, (jint) w, (jint) h, arr);
+        if (arr) env->DeleteLocalRef(arr);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
+
+// Vignettes des boutons de personnages : [id, largeur, hauteur, pixels ARGB...] repete
+extern "C" void android_send_thumbs(const int* data, int count)
+{
+    JNIEnv* env = (JNIEnv*) SDL_AndroidGetJNIEnv();
+    jobject act = (jobject) SDL_AndroidGetActivity();
+    if (!env || !act) return;
+    jclass cls = env->GetObjectClass(act);
+    jmethodID m = env->GetStaticMethodID(cls, "onGameThumbs", "([I)V");
+    if (m) {
+        jintArray arr = env->NewIntArray(count > 0 ? count : 0);
+        if (count > 0) env->SetIntArrayRegion(arr, 0, count, (const jint*) data);
+        env->CallStaticVoidMethod(cls, m, arr);
+        env->DeleteLocalRef(arr);
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(act);
+}
