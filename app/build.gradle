@@ -23,6 +23,9 @@ android {
     }
     buildTypes {
         release {
+            // Usage personnel : meme cle que le debug, pour que la release s'installe par-dessus
+            // sans desinstaller (une desinstallation efface les donnees du jeu)
+            signingConfig signingConfigs.debug
             minifyEnabled false
         }
     }
