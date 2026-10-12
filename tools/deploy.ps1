@@ -29,7 +29,9 @@ function Adb { & $adb @adbArgs @args; if ($LASTEXITCODE -ne 0) { throw "adb a ec
 
 if (-not $SkipPush) {
     if (-not $GameDir) { throw "Indique -GameDir (ou utilise -SkipPush)." }
-    if (-not (Test-Path (Join-Path $GameDir '0.u'))) { throw "0.u introuvable dans $GameDir (dossier patche 07th-Mod ?)" }
+    if (-not ((Test-Path (Join-Path $GameDir '0.u')) -or (Test-Path (Join-Path $GameDir '0.utf')))) {
+        throw "Ni 0.u ni 0.utf dans $GameDir (mauvais dossier ?)"
+    }
 }
 
 Write-Host '== Appareil =='
