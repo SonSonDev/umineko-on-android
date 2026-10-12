@@ -1444,6 +1444,7 @@ void PonscripterLabel::resetSentenceFont()
 }
 
 #ifdef ANDROID_PORT
+void androidMarkSoftBreak(const void* owner, int len); // PonscripterLabel_text.cpp
 int g_crop_x = 0; // decalage de la zone visible, en coordonnees du jeu (pour les clics)
 
 static int g_lw = -1, g_lh = -1;
@@ -2015,6 +2016,11 @@ int PonscripterLabel::parseLine()
             if (len < minlen) len = minlen;
         }
         if (len > 0 && f.isNoRoomFor(len)) {
+#ifdef ANDROID_PORT
+            if (current_read_language == current_language || current_read_language == -1)
+                androidMarkSoftBreak(current_text_buffer[current_language],
+                                     current_text_buffer[current_language]->contents.length());
+#endif
             for (j = 0; j < 2; j++) {
                 if (current_read_language == j || current_read_language == -1) {
                     current_text_buffer[j]->addBuffer(0x0a);

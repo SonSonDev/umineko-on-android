@@ -98,8 +98,84 @@ PonscripterLabel::drawGlyph(SDL_Surface* dst_surface, Fontinfo* info,
 // Returns character bytes.
 // This is where we process ligatures for display text!
 #ifdef ANDROID_PORT
+#include <string>
+#include <vector>
 extern "C" void android_send_page(const char* utf8, int newPage, const char* window);
 extern int g_story_active;
+
+// Mise en forme de la page en cours pour le panneau de texte Android.
+// Le tampon de texte ne garde ni la couleur ni la taille
+// effective, et ne distingue pas un retour a la ligne du script d'une coupure
+// automatique : on note ces informations a cote, par position dans le tampon,
+// et on les insere dans la page envoyee :
+//   0x0e + RRGGBB + style (1 chiffre hexa : 1 italique, 2 gras) + taille en % (3 chiffres)
+//   0x0f a la place du 0x0a d'une coupure automatique
+namespace {
+struct AndroidMark { int offset; bool soft_break; unsigned color; int style; int pct; };
+std::vector<AndroidMark> g_marks;
+const void* g_marks_owner = NULL; // tampon auquel les marques se rapportent
+int g_marks_len = 0;              // sa longueur au dernier appel
+
+void androidMarksSync(const void* owner, int len)
+{
+    // autre page, ou tampon vide puis rempli de nouveau : les marques sont perimees
+    if (owner != g_marks_owner || len < g_marks_len) {
+        g_marks.clear();
+        g_marks_owner = owner;
+    }
+    g_marks_len = len;
+}
+
+void androidMarkStyle(const void* owner, int len, unsigned color, int style, int pct)
+{
+    androidMarksSync(owner, len);
+    for (size_t i = g_marks.size(); i-- > 0;) {
+        if (g_marks[i].soft_break) continue;
+        if (g_marks[i].color == color && g_marks[i].style == style && g_marks[i].pct == pct) return;
+        break;
+    }
+    AndroidMark m = { len, false, color, style, pct };
+    g_marks.push_back(m);
+}
+
+void androidSendPage(const pstring& contents, const void* owner, int newPage, const char* window)
+{
+    const char* raw = contents;
+    int len = contents.length();
+    if (owner != g_marks_owner || g_marks.empty()) {
+        android_send_page(raw, newPage, window);
+        return;
+    }
+    std::string out;
+    out.reserve(len + g_marks.size() * 11);
+    int pos = 0;
+    for (size_t i = 0; i < g_marks.size(); ++i) {
+        const AndroidMark& m = g_marks[i];
+        if (m.offset < pos || m.offset > len) continue;
+        out.append(raw + pos, m.offset - pos);
+        pos = m.offset;
+        if (m.soft_break) {
+            if (pos < len && raw[pos] == 0x0a) { out += (char) 0x0f; ++pos; }
+        }
+        else {
+            char tag[16];
+            snprintf(tag, sizeof(tag), "\x0e%06X%X%03d", m.color & 0xffffff, m.style & 3,
+                     m.pct < 0 ? 0 : (m.pct > 999 ? 999 : m.pct));
+            out += tag;
+        }
+    }
+    out.append(raw + pos, len - pos);
+    android_send_page(out.c_str(), newPage, window);
+}
+}
+
+// Coupure de ligne automatique (le texte ne tenait plus dans la boite du moteur)
+void androidMarkSoftBreak(const void* owner, int len)
+{
+    androidMarksSync(owner, len);
+    AndroidMark m = { len, true, 0, 0, 100 };
+    g_marks.push_back(m);
+}
 #endif
 
 int
@@ -201,6 +277,15 @@ PonscripterLabel::drawChar(const char* text, Fontinfo* info, bool flush_flag,
         info->advanceBy(adv);
     }
 
+#ifdef ANDROID_PORT
+    if (!code && !hidden_language && lookback_flag && info == &sentence_font) {
+        int base = info->base_size();
+        androidMarkStyle(current_text_buffer[current_language],
+                         current_text_buffer[current_language]->contents.length(),
+                         (info->color.r << 16) | (info->color.g << 8) | info->color.b,
+                         info->style, base > 0 ? info->size() * 100 / base : 100);
+    }
+#endif
     // textbufferchange
     int j;
     for (j = 0; j < 2; j++) {
@@ -215,7 +300,7 @@ PonscripterLabel::drawChar(const char* text, Fontinfo* info, bool flush_flag,
 #ifdef ANDROID_PORT
     if (info == &sentence_font && lookback_flag && sentence_font_info.image_name
         && strstr(sentence_font_info.image_name, "textbox") && nativeStoryText())
-        android_send_page(current_text_buffer[current_language]->contents, 2, sentence_font_info.image_name);
+        androidSendPage(current_text_buffer[current_language]->contents, current_text_buffer[current_language], 2, sentence_font_info.image_name);
 #endif
     TextBuffer_dumpstate(1);
     return bytes;
@@ -425,7 +510,7 @@ int PonscripterLabel::clickWait(bool display_char)
 #ifdef ANDROID_PORT
         if (strstr(sentence_font_info.image_name, "textbox")) g_story_active = 1;
         if (g_story_active)
-            android_send_page(current_text_buffer[current_language]->contents, 0, sentence_font_info.image_name);
+            androidSendPage(current_text_buffer[current_language]->contents, current_text_buffer[current_language], 0, sentence_font_info.image_name);
 #endif
         if (skip_to_wait || (sentence_font.wait_time == 0)) {
             skip_to_wait = 0;
@@ -470,7 +555,7 @@ int PonscripterLabel::clickNewPage(bool display_char)
 #ifdef ANDROID_PORT
         if (strstr(sentence_font_info.image_name, "textbox")) g_story_active = 1;
         if (g_story_active)
-            android_send_page(current_text_buffer[current_language]->contents, 1, sentence_font_info.image_name);
+            androidSendPage(current_text_buffer[current_language]->contents, current_text_buffer[current_language], 1, sentence_font_info.image_name);
 #endif
     } else {
         display_char = false;
