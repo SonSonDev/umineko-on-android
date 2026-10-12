@@ -6,6 +6,11 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -80,7 +85,7 @@ public class MainActivity extends SDLActivity {
 
     // Appele par le moteur (thread SDL) quand une page de texte attend un clic
     public static void onGamePage(byte[] raw, int newPage, String window) {
-        final String text = new String(stripCodes(raw), StandardCharsets.UTF_8);
+        final CharSequence text = formatPage(raw);
         final String who = speakerName(window);
         final MainActivity a = instance;
         if (a == null) return;
@@ -95,7 +100,8 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    private static volatile String pendingText = "", pendingWho = "";
+    private static volatile CharSequence pendingText = "";
+    private static volatile String pendingWho = "";
     private static final java.util.concurrent.atomic.AtomicBoolean pendingPosted =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
@@ -110,6 +116,77 @@ public class MainActivity extends SDLActivity {
             out.write(b);
         }
         return out.toByteArray();
+    }
+
+    // Couleur de texte par defaut du script : remplacee par celle du panneau
+    private static final int SCRIPT_TEXT_COLOR = 0xffffff;
+    // Coupure de ligne automatique du moteur, en attendant de savoir s'il faut une espace
+    private static final char SOFT_BREAK = '\u0001';
+
+    // Page de l'histoire avec sa mise en forme (couleur, italique, gras, taille).
+    // Le moteur insere 0x0e + RRGGBB + style (1 italique, 2 gras) + taille en % (3 chiffres)
+    // a chaque changement, et 0x0f a la place du retour a la ligne d'une coupure automatique.
+    private static CharSequence formatPage(byte[] raw) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        java.io.ByteArrayOutputStream run = new java.io.ByteArrayOutputStream(raw.length);
+        int color = SCRIPT_TEXT_COLOR, style = 0, pct = 100;
+        for (int i = 0; i < raw.length; i++) {
+            int b = raw[i] & 0xff;
+            if (b == 0x0e && i + 10 < raw.length) {
+                try {
+                    int c = Integer.parseInt(new String(raw, i + 1, 6, StandardCharsets.US_ASCII), 16);
+                    int st = Integer.parseInt(new String(raw, i + 7, 1, StandardCharsets.US_ASCII), 16);
+                    int pc = Integer.parseInt(new String(raw, i + 8, 3, StandardCharsets.US_ASCII));
+                    appendRun(sb, run, color, style, pct);
+                    color = c; style = st; pct = pc;
+                    i += 10;
+                } catch (NumberFormatException e) { /* marque illisible : octet ignore */ }
+                continue;
+            }
+            if (b == 0x0e || b == '\r') continue;
+            if (b == 0x0f) { run.write(SOFT_BREAK); continue; }
+            // codes de mise en forme du moteur, deja traduits par les marques (voir stripCodes)
+            if (b >= 0x10 && b < 0x17) continue;
+            if (b >= 0x17 && b <= 0x1e) { i += 2; continue; }
+            if (b == 0x1f) { i += 1; continue; }
+            run.write(b);
+        }
+        appendRun(sb, run, color, style, pct);
+
+        // Le moteur coupe les lignes pour sa boite 960 px : on les recolle et on laisse Android
+        // reflowrer. Les retours a la ligne du script, eux, sont gardes.
+        for (int i = sb.length() - 1; i >= 0; i--) {
+            if (sb.charAt(i) != SOFT_BREAK) continue;
+            if (i > 0 && sb.charAt(i - 1) >= 0x2e80) sb.delete(i, i + 1); // pas d'espace en japonais
+            else sb.replace(i, i + 1, " ");
+        }
+        for (int i = sb.length() - 1; i > 0; i--) {
+            char c = sb.charAt(i), prev = sb.charAt(i - 1);
+            if (c == ' ' && (prev == ' ' || prev == '\n')) sb.delete(i, i + 1);
+            else if (c == '\n' && prev == ' ') sb.delete(i - 1, i);
+        }
+        while (sb.length() > 0 && sb.charAt(0) <= ' ') sb.delete(0, 1);
+        while (sb.length() > 0 && sb.charAt(sb.length() - 1) <= ' ') sb.delete(sb.length() - 1, sb.length());
+        return sb;
+    }
+
+    private static void appendRun(SpannableStringBuilder sb, java.io.ByteArrayOutputStream run,
+                                  int color, int style, int pct) {
+        if (run.size() == 0) return;
+        int start = sb.length();
+        sb.append(new String(run.toByteArray(), StandardCharsets.UTF_8));
+        run.reset();
+        int end = sb.length();
+        // une couleur trop sombre serait illisible sur le fond du panneau
+        int luma = (Color.red(color) * 299 + Color.green(color) * 587 + Color.blue(color) * 114) / 1000;
+        if (color != SCRIPT_TEXT_COLOR && luma >= 48)
+            sb.setSpan(new ForegroundColorSpan(0xff000000 | color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int face = ((style & 1) != 0 ? Typeface.ITALIC : 0) | ((style & 2) != 0 ? Typeface.BOLD : 0);
+        if (face != 0)
+            sb.setSpan(new StyleSpan(face), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (pct > 0 && pct != 100)
+            sb.setSpan(new RelativeSizeSpan(Math.max(0.6f, Math.min(2.5f, pct / 100f))), start, end,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     // Le nom du personnage est incruste dans l'image de la boite : textbox\normal\NN.png
@@ -736,19 +813,21 @@ public class MainActivity extends SDLActivity {
     private String lastPage = "";
 
     // Historique natif (le moteur ne dessine plus sa propre boite de texte)
-    private final java.util.ArrayList<String[]> history = new java.util.ArrayList<>();
+    private final java.util.ArrayList<CharSequence[]> history = new java.util.ArrayList<>();
     private String curWho = "", curText = "";
+    private CharSequence curRich = ""; // curText avec sa mise en forme
     private ScrollView historyView;
     private LinearLayout historyList;
 
-    private void rememberPage(String text, String who) {
+    private void rememberPage(String text, CharSequence rich, String who) {
         boolean sameFlow = !curText.isEmpty() && text.startsWith(curText) && who.equals(curWho);
         if (!sameFlow && !curText.isEmpty()) {
-            history.add(new String[] { curWho, curText });
+            history.add(new CharSequence[] { curWho, curRich });
             if (history.size() > 400) history.remove(0);
         }
         curWho = who;
         curText = text;
+        curRich = rich;
     }
 
     private void toggleHistory() {
@@ -757,10 +836,10 @@ public class MainActivity extends SDLActivity {
             return;
         }
         historyList.removeAllViews();
-        java.util.ArrayList<String[]> all = new java.util.ArrayList<>(history);
-        if (!curText.isEmpty()) all.add(new String[] { curWho, curText });
-        for (String[] e : all) {
-            if (!e[0].isEmpty()) {
+        java.util.ArrayList<CharSequence[]> all = new java.util.ArrayList<>(history);
+        if (!curText.isEmpty()) all.add(new CharSequence[] { curWho, curRich });
+        for (CharSequence[] e : all) {
+            if (e[0].length() != 0) {
                 TextView w = new TextView(this);
                 w.setText(e[0]);
                 w.setTextColor(Color.rgb(232, 190, 120));
@@ -789,15 +868,14 @@ public class MainActivity extends SDLActivity {
         historyView.post(() -> historyView.fullScroll(View.FOCUS_DOWN));
     }
 
-    private void showPage(String raw, String who) {
+    private void showPage(CharSequence rich, String who) {
         speakerText.setText(who);
         speakerText.setVisibility(who.isEmpty() ? View.GONE : View.VISIBLE);
-        // Le moteur coupe les lignes pour sa boite 960 px : on les recolle et on laisse Android reflowrer
-        String t = raw.replace("\r", "").replace("\n", " ").replaceAll(" {2,}", " ").trim();
+        String t = rich.toString();
         if (t.equals(lastPage)) return;
-        rememberPage(t, who);
+        rememberPage(t, rich, who);
         lastPage = t;
-        pageText.setText(t);
+        pageText.setText(rich);
         hintText.setVisibility(View.GONE);
     }
 

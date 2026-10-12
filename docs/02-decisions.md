@@ -115,3 +115,9 @@ Principe : la scène est rendue par le moteur (rognée sur les côtés), le text
 - Pied de page : « Exit » devient « Back » hors du titre ; « Title » devient « Return to title » (rouge) ; « Close menu » n'apparaît que sans « Back ».
 - Numéro d'emplacement = (page − 1) × 8 + rang.
 - Reste à faire : afficher les valeurs courantes (Music: 40, Voices: 70…) à côté des réglages au lieu de les laisser dans la scène.
+
+### Mise en forme du texte en portrait
+- Le tampon de texte du moteur (`current_text_buffer`) ne contient ni la couleur (`#RRGGBB` ne modifie que `sentence_font.color`) ni la taille effective, et ses `0x0a` mêlent retours à la ligne du script et coupures automatiques. Le panneau natif affichait donc tout d'une seule couleur, sans italique ni gras, sur un seul paragraphe.
+- `drawChar` note à côté du tampon chaque changement de couleur / style / taille (`androidMarkStyle`), et la routine de coupure de ligne note ses coupures (`androidMarkSoftBreak`). `androidSendPage` (PonscripterLabel_text.cpp) insère ces marques dans la page envoyée : `0x0e` + `RRGGBB` + style (1 italique, 2 gras) + taille en % sur 3 chiffres ; `0x0f` à la place du `0x0a` d'une coupure automatique. Le tampon lui-même (historique du moteur, sauvegardes) n'est pas modifié.
+- `MainActivity.formatPage` en fait un texte à spans (couleur, italique/gras, taille relative), utilisé par le panneau et par l'historique natif. Le blanc `#FFFFFF` du script reste la couleur crème du panneau ; une couleur trop sombre pour le fond est ignorée. Les coupures automatiques redeviennent des espaces (rien en japonais), les retours à la ligne du script sont conservés.
+- Non compilé ni testé sur téléphone au moment de l'écriture (seulement `clang -fsyntax-only` sur les deux fichiers du moteur).
