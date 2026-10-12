@@ -1,3 +1,4 @@
+#include <vector>
 #include <string>
 /* -*- C++ -*-
  *
@@ -553,8 +554,31 @@ bool PonscripterLabel::nativeMenuActive()
     return act;
 }
 
+// Texte de description (TIPS, personnages) : image PNG incrustee posee par le script (lsp)
+static bool isTipsTextImage(AnimationInfo* a)
+{
+    const char* f = a->file_name;
+    if (!f || !f[0]) f = a->image_name;
+    if (!f || !a->image_surface || !a->showing()) return false;
+    if (!strcasestr(f, "r_click")) return false;
+    if (!strcasestr(f, "\\text\\") && !strcasestr(f, "/text/")) return false;
+    return !strcasestr(f, "txt_");
+}
+
+extern "C" void android_send_tips_image(int w, int h, const unsigned int* argb);
+extern "C" void android_send_thumbs(const int* data, int count);
+
+static bool isChaBack(AnimationInfo* a)
+{
+    const char* f = a->file_name;
+    if (!f || !f[0]) f = a->image_name;
+    return f && a->image_surface && a->showing()
+        && (strcasestr(f, "cha_back") || strcasestr(f, "cha_btn"));
+}
+
 bool PonscripterLabel::isMenuButtonAnim(AnimationInfo* a)
 {
+    if (isTipsTextImage(a) || isChaBack(a)) return true;
     for (ButtonElt::iterator it = buttons.begin(); it != buttons.end(); ++it)
         if (it->second.isSprite() && it->second.sprite_no >= 0 && a == &sprite_info[it->second.sprite_no])
             return true;
@@ -596,6 +620,76 @@ void PonscripterLabel::androidPublishButtons()
                 }
             }
             out += (char) 10;
+        }
+    }
+    {
+        // portraits des personnages (cha_btn) et fond de l'arbre (cha_back) : [id, x, y, w, h, pixels...]
+        static std::string lastKey;
+        std::string key;
+        std::vector<int> pack;
+        struct Item { int id; AnimationInfo* a; };
+        std::vector<Item> list;
+        if (nativeMenuActive()) {
+            for (int k = 0; k < MAX_SPRITE_NUM; ++k) {
+                AnimationInfo* a = &sprite_info[k];
+                if (!isChaBack(a)) continue;
+                const char* f = a->file_name;
+                if (!f || !f[0]) f = a->image_name;
+                int id = strcasestr(f, "cha_back") ? -1000 - k : -100000 - k;
+                if (strcasestr(f, "cha_btn")) {
+                    for (ButtonElt::iterator it = buttons.begin(); it != buttons.end(); ++it)
+                        if (it->second.isSprite() && it->second.sprite_no == k) { id = it->first; break; }
+                }
+                Item i = { id, a };
+                list.push_back(i);
+            }
+        }
+        for (size_t n = 0; n < list.size(); ++n) {
+            AnimationInfo* a = list[n].a;
+            SDL_Surface* sf = a->image_surface;
+            if (sf->format->BitsPerPixel != 32) continue;
+            int cw = list[n].id > -1000 && a->pos.w > 0 && a->pos.w <= sf->w ? a->pos.w : sf->w;
+            if (list[n].id <= -100000 && cw == sf->w) cw = sf->w / 2; // cases vides : deux cellules (normal / survol)
+            char kb[64];
+            snprintf(kb, sizeof(kb), "%d:%p;", list[n].id, (void*) sf);
+            key += kb;
+            pack.push_back(list[n].id); pack.push_back(a->pos.x); pack.push_back(a->pos.y);
+            pack.push_back(cw); pack.push_back(sf->h);
+            SDL_LockSurface(sf);
+            for (int y = 0; y < sf->h; ++y) {
+                const unsigned int* row = (const unsigned int*) ((const unsigned char*) sf->pixels + y * sf->pitch);
+                for (int x = 0; x < cw; ++x) pack.push_back((int) row[x]);
+            }
+            SDL_UnlockSurface(sf);
+        }
+        if (key != lastKey) {
+            lastKey = key;
+            android_send_thumbs(pack.empty() ? NULL : &pack[0], (int) pack.size());
+            g_menu_redraw = true;
+        }
+    }
+    {
+        // description TIPS / personnage : l'image est agrandie par Android, plus lue dans la scene
+        static const void* lastTips = NULL;
+        AnimationInfo* found = NULL;
+        if (nativeMenuActive()) {
+            for (int k = 0; k < MAX_SPRITE_NUM && !found; ++k)
+                if (isTipsTextImage(&sprite_info[k])) found = &sprite_info[k];
+        }
+        const void* key = found ? (const void*) found->image_surface : NULL;
+        if (key != lastTips) {
+            lastTips = key;
+            if (found) {
+                SDL_Surface* sf = found->image_surface;
+                if (sf->format->BitsPerPixel == 32 && sf->pitch == sf->w * 4) {
+                    SDL_LockSurface(sf);
+                    android_send_tips_image(sf->w, sf->h, (const unsigned int*) sf->pixels);
+                    SDL_UnlockSurface(sf);
+                }
+            } else {
+                android_send_tips_image(0, 0, NULL);
+            }
+            g_menu_redraw = true;
         }
     }
     {

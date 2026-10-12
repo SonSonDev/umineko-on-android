@@ -22,6 +22,12 @@
 
 #define MY_PI 3.14159265358979323846
 
+/* SDL2 : SDL_MixAudio() ne fait rien sans peripherique "legacy" (id 1), ce qui
+   est le cas quand SDL_mixer ouvre le sien via SDL_OpenAudioDevice(). La
+   sortie MPEG est toujours en S16 natif. */
+#define SDL_MixAudio(dst, src, len, vol) \
+    SDL_MixAudioFormat((dst), (src), AUDIO_S16SYS, (len), (vol))
+
 #if SDL_BYTEORDER == SDL_LIL_ENDIAN
 #define _KEY 0
 #else

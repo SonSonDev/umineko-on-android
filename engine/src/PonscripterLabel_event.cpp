@@ -243,7 +243,15 @@ void PonscripterLabel::flushEventSub(SDL_Event &event)
         playExternalMusic(music_play_loop_flag);
     }
     else if (event.type == ONS_WAVE_EVENT) { // for processing btntim2 and automode correctly
-        if (wave_sample[event.user.code]) {
+        // L'evenement est traite apres coup : si un nouveau son a ete assigne
+        // a ce canal entre-temps (voix suivante apres un clic), il ne faut pas
+        // le liberer a la place de celui qui vient de se terminer.
+        int ch = event.user.code;
+        bool stale = ch >= 0 && ch < ONS_MIX_CHANNELS + ONS_MIX_EXTRA_CHANNELS
+            && wave_sample[ch]
+            && ((event.user.data1 && event.user.data1 != wave_sample[ch])
+                || Mix_Playing(ch));
+        if (wave_sample[event.user.code] && !stale) {
             Mix_FreeChunk(wave_sample[event.user.code]);
             wave_sample[event.user.code] = NULL;
             if (event.user.code == MIX_LOOPBGM_CHANNEL0
@@ -334,6 +342,8 @@ extern "C" void waveCallback(int channel)
     SDL_Event event;
     event.type = ONS_WAVE_EVENT;
     event.user.code = channel;
+    event.user.data1 = Mix_GetChunk(channel); // chunk qui vient de finir
+    event.user.data2 = NULL;
     SDL_PushEvent(&event);
 }
 
