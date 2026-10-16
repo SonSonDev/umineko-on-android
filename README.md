@@ -111,7 +111,7 @@ adb push "C:\...\Umineko\." /sdcard/Android/data/dev.umineko.android/files/game/
 
 ## Utilisation
 
-- Toucher = avancer. Balayage vers le haut ou « Histo » = historique. Barre Auto / Skip / Menu.
+- Toucher = avancer. Balayage vers le bas ou bouton « Logs » = historique ; depuis les logs, Retour ou balayage vers le haut une fois en bas = retour au jeu. Barre du bas : Menu / Auto / Skip / Logs. La taille du texte (A− / A+) se règle dans le menu.
 - Retour Android = pause. Les sauvegardes se font depuis le menu du jeu.
 - Portrait : la scène est rognée sur les côtés, le texte est affiché par Android. Paysage : le moteur dessine tout.
 

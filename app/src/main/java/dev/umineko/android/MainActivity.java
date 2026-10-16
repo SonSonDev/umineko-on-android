@@ -38,6 +38,9 @@ public class MainActivity extends SDLActivity {
     // En histoire (portrait), la scene est rognee sur les cotes : zone 4:3
     private static final float STORY_RATIO = 3f / 4f;
 
+    // Taille des libelles de la barre du bas (>= 16 sp)
+    private static final int BAR_SP = 16;
+
     private static MainActivity instance;
 
     private LinearLayout root;
@@ -300,6 +303,7 @@ public class MainActivity extends SDLActivity {
             choiceBox.setVisibility(View.GONE);
             return;
         }
+        closeLogs(); // les logs sont au-dessus des ecrans du jeu : ils les cacheraient
         String[] lines = data.split(String.valueOf((char) 10));
         String head = lines.length > 0 ? lines[0].replace((char) 1, (char) 10) : "";
         head = head.replaceAll("[ ]{2,}", " ").trim();
@@ -340,6 +344,7 @@ public class MainActivity extends SDLActivity {
             noteScroll.setVisibility(View.GONE);
             return;
         }
+        closeLogs();
         String nl2 = String.valueOf((char) 10) + (char) 10;
         String body = "New function: TIPS MODE" + nl2
                 + "In the middle of the game, at any time, tap Menu to open the TIPS MODE." + nl2
@@ -562,6 +567,7 @@ public class MainActivity extends SDLActivity {
     private void showMenu(String data) {
         if (choicesShown && data.isEmpty()) return; // les choix (select) occupent deja cette zone
         lastMenuData = data;
+        if (!data.isEmpty()) closeLogs();
         menuList.removeAllViews();
         if (tipsBitmap != null) {
             android.widget.ImageView iv = new android.widget.ImageView(this);
@@ -688,6 +694,23 @@ public class MainActivity extends SDLActivity {
             cell(row, name, 1f);
             if (pair[0] != null) fixedCell(row, styled("−", 22, C_BASE, 0, pair[0].id), 64);
             if (pair[1] != null) fixedCell(row, styled("+", 22, C_BASE, 0, pair[1].id), 64);
+        }
+        // 3b. taille du texte de lecture (le menu en histoire, plus la barre)
+        if (storyMode && !titleScreen) {
+            LinearLayout row = hrow(54, 10);
+            TextView name = new TextView(this);
+            name.setText("Text size");
+            name.setTextColor(Color.rgb(236, 232, 224));
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            name.setGravity(Gravity.CENTER_VERTICAL);
+            name.setPadding(dp(8), 0, 0, 0);
+            cell(row, name, 1f);
+            Button smaller = makeButton("A−", 20, C_BASE);
+            smaller.setOnClickListener(v -> changeTextSize(-1.5f));
+            Button bigger = makeButton("A+", 20, C_BASE);
+            bigger.setOnClickListener(v -> changeTextSize(1.5f));
+            fixedCell(row, smaller, 64);
+            fixedCell(row, bigger, 64);
         }
         // 4. emplacements de sauvegarde
         for (MenuItem s : slots) {
@@ -830,6 +853,11 @@ public class MainActivity extends SDLActivity {
         curRich = rich;
     }
 
+    private void closeLogs() {
+        if (historyView != null && historyView.getVisibility() == View.VISIBLE)
+            historyView.setVisibility(View.GONE);
+    }
+
     private void toggleHistory() {
         if (historyView.getVisibility() == View.VISIBLE) {
             historyView.setVisibility(View.GONE);
@@ -859,7 +887,7 @@ public class MainActivity extends SDLActivity {
         }
         if (all.isEmpty()) {
             TextView t = new TextView(this);
-            t.setText("History is empty");
+            t.setText("Logs are empty");
             t.setTextColor(Color.GRAY);
             t.setPadding(dp(20), dp(20), dp(20), 0);
             historyList.addView(t);
@@ -964,7 +992,7 @@ public class MainActivity extends SDLActivity {
         p.setOrientation(LinearLayout.VERTICAL);
         p.setBackgroundColor(Color.rgb(16, 14, 20));
 
-        // Zone de lecture : toucher = avancer, balayer vers le haut = historique
+        // Zone de lecture : toucher = avancer, balayer vers le bas = logs
         FrameLayout reader = new FrameLayout(this);
         speakerText = new TextView(this);
         speakerText.setTextColor(Color.rgb(232, 190, 120));
@@ -1002,6 +1030,25 @@ public class MainActivity extends SDLActivity {
         historyView.addView(historyList, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         historyView.setOnClickListener(v -> toggleHistory());
+        // balayage vers le haut alors qu'on etait deja au bout des logs = retour au jeu
+        final float[] hDown = new float[2];
+        final boolean[] hAtEnd = new boolean[1];
+        historyView.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                hDown[0] = ev.getX();
+                hDown[1] = ev.getY();
+                hAtEnd[0] = !v.canScrollVertically(1);
+            } else if (ev.getActionMasked() == MotionEvent.ACTION_UP) {
+                float dy = ev.getY() - hDown[1];
+                if (hAtEnd[0] && !v.canScrollVertically(1) && dy < -dp(60)
+                        && Math.abs(dy) > Math.abs(ev.getX() - hDown[0])) {
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                    toggleHistory();
+                    return true;
+                }
+            }
+            return false; // defilement et tap restent geres par le ScrollView
+        });
         attachReaderGestures(reader);
         noteView = new TextView(this);
         noteView.setTextColor(Color.rgb(240, 236, 228));
@@ -1069,18 +1116,18 @@ public class MainActivity extends SDLActivity {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setBackgroundColor(Color.rgb(26, 24, 34));
         bar.setPadding(dp(8), dp(6), dp(8), dp(8));
-        Button histo = makeButton("History", 12, Color.rgb(44, 48, 64));
-        histo.setOnClickListener(v -> toggleHistory());
-        addBarButton(bar, histo);
+        Button menu = tapButton("Menu", KeyEvent.KEYCODE_ESCAPE);
+        menu.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            closeLogs();
+            sendKey(KeyEvent.KEYCODE_ESCAPE);
+        });
+        addBarButton(bar, menu);
         addBarButton(bar, tapButton("Auto", KeyEvent.KEYCODE_A));
         addBarButton(bar, holdButton("Skip", KeyEvent.KEYCODE_CTRL_LEFT));
-        addBarButton(bar, tapButton("Menu", KeyEvent.KEYCODE_ESCAPE));
-        Button smaller = makeButton("A−", 15, Color.rgb(44, 48, 64));
-        smaller.setOnClickListener(v -> changeTextSize(-1.5f));
-        Button bigger = makeButton("A+", 15, Color.rgb(44, 48, 64));
-        bigger.setOnClickListener(v -> changeTextSize(1.5f));
-        addBarButton(bar, smaller);
-        addBarButton(bar, bigger);
+        Button logs = makeButton("Logs", BAR_SP, Color.rgb(44, 48, 64));
+        logs.setOnClickListener(v -> toggleHistory());
+        addBarButton(bar, logs);
         p.addView(bar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
         return p;
@@ -1104,9 +1151,9 @@ public class MainActivity extends SDLActivity {
                 case MotionEvent.ACTION_UP:
                     float dy = ev.getY() - down[1];
                     float dx = ev.getX() - down[0];
-                    if (dy < -dp(60) && Math.abs(dy) > Math.abs(dx)) {
+                    if (dy > dp(60) && Math.abs(dy) > Math.abs(dx)) {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                        toggleHistory();
+                        if (historyView.getVisibility() != View.VISIBLE) toggleHistory();
                     } else if (Math.abs(dx) < slop * 2 && Math.abs(dy) < slop * 2) {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                         sendKey(KeyEvent.KEYCODE_ENTER); // avancer
@@ -1144,7 +1191,7 @@ public class MainActivity extends SDLActivity {
     }
 
     private Button tapButton(String label, int keyCode) {
-        Button b = makeButton(label, 12, Color.rgb(44, 48, 64));
+        Button b = makeButton(label, BAR_SP, Color.rgb(44, 48, 64));
         b.setOnClickListener(v -> {
             v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
             sendKey(keyCode);
@@ -1153,7 +1200,7 @@ public class MainActivity extends SDLActivity {
     }
 
     private Button holdButton(String label, int keyCode) {
-        Button b = makeButton(label, 12, Color.rgb(120, 52, 52));
+        Button b = makeButton(label, BAR_SP, Color.rgb(120, 52, 52));
         b.setOnTouchListener((v, ev) -> {
             switch (ev.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
@@ -1180,6 +1227,10 @@ public class MainActivity extends SDLActivity {
     // Retour Android = menu du jeu (clic droit) au lieu de fermer l'appli
     @Override
     public void onBackPressed() {
+        if (historyView != null && historyView.getVisibility() == View.VISIBLE) {
+            toggleHistory();
+            return;
+        }
         sendKey(KeyEvent.KEYCODE_ESCAPE);
     }
 }

@@ -20,7 +20,9 @@ Status: `done`. `tools/deploy.ps1` builds, installs, creates the data folder thr
 ## F3 — Portrait story view
 Status: `done` (formatting `in progress`: colours/italic/bold/soft-breaks not yet tested on device).
 - Scene cropped to 4:3 band keeping characters ≥ 2/3 visible; native text panel with speaker name, size A−/A+,
-  tap = advance, swipe up or "Histo" = native history, bar Auto / Skip / Menu.
+  tap = advance, swipe down or "Logs" = native logs (history); from the logs, Back or a swipe up while already at
+  the end returns to the game. Bottom bar: Menu / Auto / Skip / Logs (labels ≥ 16 sp). Text size A−/A+ lives in the
+  in-story menu ("Text size" row).
 - Story mode requires ADV (chosen at first notice).
 
 ## F4 — Native menus
@@ -47,7 +49,7 @@ patched `.mpg`; rendering of movies in the cropped area unverified.
 Status: `planned`. Tokens in one `ui/theme` place, theme "Livre-objet", second theme later. See `DESIGN.md`.
 
 ## F10 — Visible frequent controls
-Status: `planned`. Auto / Skip / History / quick save / Menu always have a visible, thumb-reachable button
+Status: `in progress` (bar reordered 2026-10-16; quick save postponed, needs an engine hook). Auto / Skip / Logs / quick save / Menu always have a visible, thumb-reachable button
 (dimmed at rest). Quick save does not exist yet.
 
 ## F11 — Release variant

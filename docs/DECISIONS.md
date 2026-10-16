@@ -1,6 +1,13 @@
 # Decision log
 One entry per decision, newest first. Earlier history (2026-10-09 → 10-12) is in `02-decisions.md` (kept as is).
 
+## 2026-10-16 — Bottom bar and gestures
+- Decision: bar order Menu, Auto, Skip, Logs ("History" renamed "Logs"); A−/A+ moved into the in-story menu; swipe down
+  opens the logs (swipe up no longer does); Back or swipe up at the end of the logs returns to the game.
+- Why: the developer's request (thumb order, fewer bar buttons so labels reach 16 sp). Quick save postponed: the
+  engine has none (needs a C++ hook), tackled separately.
+- Alternatives rejected: quick save as a 5th bar button or a menu entry (deferred).
+
 ## 2026-10-16 — Kickoff of the existing project (reverse-engineered docs)
 - Decision: tier **T1** (personal tool, shared GitHub repo, no store). Why: asked to the developer; one maintainer.
 - Decision: goal = best possible **portrait** mobile adaptation. UI direction "Livre-objet discret"; see `DESIGN.md`.
